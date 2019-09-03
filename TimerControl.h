@@ -9,7 +9,7 @@ struct Timer
 };
 
 #define TIMERFREQUENCY                    1000    // Time = 1 sec / TIMERFREQUENCY
-#define LCD_FREQ                    	    200	  // Frequency to update the LCD display
+#define LCD_FREQ                    	    100	  // Frequency to update the LCD display
 
 
 #define TIMERS                            1       // Number of timers

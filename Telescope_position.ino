@@ -74,6 +74,8 @@ byte setting3 = 0;  // a variable which holds the value we set
  Remember to change "void setAdmin(byte name,*BYTE* setting)" to match and probably add some 
  "modeMax"-type overflow code in the "if(Mode == N && buttonPressed)" section*/
 
+int onboard_LED = 13;  // Onboard LED for debugging
+
 //--------------------------------------------------------------------------------------------------------------------------------------------------------
 void setup()
 {
@@ -108,6 +110,8 @@ void setup()
   pinMode (enc_menuButton, INPUT_PULLUP); // setup the button pin
   attachInterrupt(digitalPinToInterrupt(enc_menuA), PinA, RISING);
   attachInterrupt(digitalPinToInterrupt(enc_menuB), PinB, RISING);
+
+  pinMode(onboard_LED, OUTPUT); // On-board LED for debugging
   
 }
 
@@ -140,6 +144,8 @@ void loop()
     update_LCD();
     TimerStart(&pTimerLCD, LCD_FREQ);
 
+    digitalWrite(onboard_LED, !digitalRead(onboard_LED)); //Toggle the state of the on board LED
+  
   }// end if
 
   rotaryMenu();
