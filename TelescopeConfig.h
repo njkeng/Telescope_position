@@ -10,10 +10,13 @@ long pulses_enc1 = 36000;
 long pulses_enc2 = 36000;             
 
 // Define DUE's pins
-#define enc_1A 2   // define DUE pin to encoder 1-channel A                     
-#define enc_1B 3   // define DUE pin to encoder 1-channel B  
-#define enc_2A 4   // define DUE pin to encoder 2-channel A  
-#define enc_2B 5   // define DUE pin to encoder 2-channel B  
+#define enc_1A 2            // define DUE pin to encoder 1-channel A                     
+#define enc_1B 3            // define DUE pin to encoder 1-channel B  
+#define enc_2A 4            // define DUE pin to encoder 2-channel A  
+#define enc_2B 5            // define DUE pin to encoder 2-channel B  
+#define enc_menuA 6         // define DUE pin to menu encoder channel A
+#define enc_menuB 7         // define DUE pin to menu encoder channel B    
+#define enc_menuButton 8    // Encoder built-in pushbutton
 
 // enter your latitude (example: North 40º33'20'')
 int latHH = 40;    // this means 40º North
