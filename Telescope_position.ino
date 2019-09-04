@@ -59,15 +59,8 @@ double  cos_phi, sin_phi;
 double  alt, azi;
 
 // Declarations for menu system
-
-volatile byte aFlag = 0; // let's us know when we're expecting a rising edge on pinA to signal that the encoder has arrived at a detent
-volatile byte bFlag = 0; // let's us know when we're expecting a rising edge on pinB to signal that the encoder has arrived at a detent (opposite direction to when aFlag is set)
 volatile byte encoderPos = 0; //this variable stores our current value of encoder position. Change to int or uin16_t instead of byte if you want to record a larger range than 0-255
-volatile byte oldEncPos = 0; //stores the last encoder position value so we can compare to the current reading and see if it has changed (so we know when to print to the serial monitor)
-//volatile byte reading = 0; //somewhere to store the direct values we read from our interrupt pins before checking to see if we have moved a whole detent
-
-volatile byte state_menuA = 0; //somewhere to store the direct values we read from our interrupt pins before checking to see if we have moved a whole detent
-volatile byte state_menuB = 0; //somewhere to store the direct values we read from our interrupt pins before checking to see if we have moved a whole detent
+volatile byte oldEncPos = 0; //DEBUGGING stores the last encoder position value so we can compare to the current reading and see if it has changed (so we know when to print to the serial monitor)
 // Button reading, including debounce without delay function declarations
 byte oldButtonState = HIGH;  // assume switch open because of pull-up resistor
 const unsigned long debounceTime = 10;  // milliseconds
@@ -84,6 +77,11 @@ byte setting3 = 0;  // a variable which holds the value we set
  "modeMax"-type overflow code in the "if(Mode == N && buttonPressed)" section*/
 
 int onboard_LED = 13;  // Onboard LED for debugging
+
+// For encoder input processing
+static uint8_t prevNextCode = 0;
+static uint16_t store=0;
+static int8_t val;
 
 //--------------------------------------------------------------------------------------------------------------------------------------------------------
 void setup()
@@ -114,9 +112,6 @@ void setup()
   pinMode(enc_mA, INPUT_PULLUP); // set pinA as an input, pulled HIGH to the logic voltage (5V or 3.3V for most cases)
   pinMode(enc_mB, INPUT_PULLUP); // set pinB as an input, pulled HIGH to the logic voltage (5V or 3.3V for most cases)
   pinMode (enc_mButton, INPUT_PULLUP); // setup the button pin
-
-  attachInterrupt(digitalPinToInterrupt(enc_mA), PinA, RISING);
-  attachInterrupt(digitalPinToInterrupt(enc_mB), PinB, RISING);
 
   pinMode(onboard_LED, OUTPUT); // On-board LED for debugging
 
@@ -150,7 +145,14 @@ void loop()
 
   t_ciclo = millis() - t_ciclo;
   t_ciclo_acumulado = t_ciclo_acumulado + t_ciclo;
-  
+
+
+  // Menu system
+  if( val=read_rotary() ) {
+    encoderPos +=val;
+  }
+  rotaryMenu();
+    
   // Update OLED display
   if(pTimerLCD.bExpired == true)
   {
@@ -161,7 +163,7 @@ void loop()
   
   }// end if
 
-  rotaryMenu();
+
 
 }
 
@@ -310,6 +312,7 @@ void rotaryMenu() {
     oldEncPos = encoderPos;// DEBUGGING
   }// DEBUGGING
   
+
   // Button debounce
   byte buttonState = digitalRead (enc_mButton); 
   if (buttonState != oldButtonState){
@@ -330,7 +333,7 @@ void rotaryMenu() {
   //Main menu section
   if (Mode == 0) {
     if (encoderPos > (modeMax+10)) encoderPos = modeMax; // check we haven't gone out of bounds below 0 and correct if we have
-    else if (encoderPos > modeMax) encoderPos = 0; // check we haven't gone out of bounds above modeMax and correct if we have
+    else if (encoderPos > modeMax) encoderPos = 0; // check we haven't gone out of bounds above modeMax and correct if we have   
     if (buttonPressed){ 
       Mode = encoderPos; // set the Mode to the current value of input if button has been pressed
       Serial.print("Mode selected: "); //DEBUGGING: print which mode has been selected
@@ -379,31 +382,24 @@ void setAdmin(byte name, byte setting){
   Serial.println("Main Menu"); //DEBUGGING
 }
 
-//Rotary encoder interrupt service routine for the other encoder pin
-void PinA(){
-  state_menuA = digitalRead(enc_mA);
-  state_menuB = digitalRead(enc_mB);
-  if ( state_menuA && state_menuB && aFlag) { //check that we have both pins at detent (HIGH) and that we are expecting detent on this pin's rising edge
-    encoderPos --; //increment the encoder's position count
-    bFlag = 0; //reset flags for the next turn
-    aFlag = 0; //reset flags for the next turn
-  }
-  else if (state_menuB == 1) {
-    bFlag = 1; //signal that we're expecting pinA to signal the transition to detent from free rotation
-  }
-}
+// Process rotary encoder input
+// Debounce is implemented using a lookup table approach
+// A vald CW or  CCW move returns 1, invalid returns 0.
+int8_t read_rotary() {
+  static int8_t rot_enc_table[] = {0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0};
 
-//Rotary encoder interrupt service routine for the other encoder pin
-void PinB(){
-  state_menuA = digitalRead(enc_mA);
-  state_menuB = digitalRead(enc_mB);
-  
-  if ( state_menuA && state_menuB && bFlag) { //check that we have both pins at detent (HIGH) and that we are expecting detent on this pin's rising edge
-    encoderPos ++; //increment the encoder's position count
-    bFlag = 0; //reset flags for the next turn
-    aFlag = 0; //reset flags for the next turn
-  }
-  else if (state_menuA == 1) {
-    aFlag = 1; //signal that we're expecting pinA to signal the transition to detent from free rotation
-  }
+  prevNextCode <<= 2;
+  if (digitalRead(enc_mA)) prevNextCode |= 0x01;
+  if (digitalRead(enc_mB)) prevNextCode |= 0x02;
+
+  prevNextCode &= 0x0f;
+
+   // If valid then store as 16 bit data.
+   if  (rot_enc_table[prevNextCode] ) {
+      store <<= 4;
+      store |= prevNextCode;
+      if ((store&0xff)==0x2b) return -1;
+      if ((store&0xff)==0x17) return 1;
+   }
+   return 0;
 }
