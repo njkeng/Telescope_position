@@ -109,8 +109,6 @@ enum yesOrNo {
 enum yesOrNo firstEdit;
 enum yesOrNo confirmation;
 
-int onboard_LED = 13;  // Onboard LED for debugging
-
 // For encoder input processing
 static uint8_t prevNextCode = 0;
 static uint16_t store=0;
@@ -145,8 +143,6 @@ void setup()
   pinMode(enc_mA, INPUT_PULLUP); // set pinA as an input, pulled HIGH to the logic voltage (5V or 3.3V for most cases)
   pinMode(enc_mB, INPUT_PULLUP); // set pinB as an input, pulled HIGH to the logic voltage (5V or 3.3V for most cases)
   pinMode (enc_mButton, INPUT_PULLUP); // setup the button pin
-
-  pinMode(onboard_LED, OUTPUT); // On-board LED for debugging
 
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
@@ -191,9 +187,6 @@ void loop()
   {
     update_OLED();
     TimerStart(&pTimerLCD, LCD_FREQ);
-
-    digitalWrite(onboard_LED, !digitalRead(onboard_LED)); //Toggle the state of the on board LED
-  
   }// end if
 
 
