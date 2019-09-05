@@ -76,6 +76,39 @@ byte setting3 = 0;  // a variable which holds the value we set
  Remember to change "void setAdmin(byte name,*BYTE* setting)" to match and probably add some 
  "modeMax"-type overflow code in the "if(Mode == N && buttonPressed)" section*/
 
+enum menuItems {
+  TEL_EQUITORIAL,   // Current equitorial coordinates of our telescope
+  TEL_HORIZONTAL,   // Current horizontal coordinates of our telescope
+  TEL_LATITUDE,     // Latitude of our observing position
+  STAR_RA,          // Right ascension of our reference star
+  STAR_HA           // Hour angle of our reference star
+};
+enum menuItems menuItem;
+
+enum menuModes {
+  SHOW,          // Menu is in display mode
+  EDIT              // Menu is in edit mode
+};
+enum menuModes menuMode;
+
+enum editingFields {
+  VALUE1,           // Editing Field 1
+  VALUE2,           // Editing Field 2
+  VALUE3,           // Editing Field 3
+  CONFIRMATION      // Confirmation screen, yes or no
+};
+enum editingFields editingField;
+int value1temp = 0;
+int value2temp = 0;
+int value3temp = 0;
+
+enum yesOrNo {
+  YES,            // Just started editing this item
+  NO              // Have been editing this item on previous cycles
+};
+enum yesOrNo firstEdit;
+enum yesOrNo confirmation;
+
 int onboard_LED = 13;  // Onboard LED for debugging
 
 // For encoder input processing
@@ -330,6 +363,8 @@ void rotaryMenu() {
     }  // end if debounce time up
   } // end of state change
 
+
+/*
   //Main menu section
   if (Mode == 0) {
     if (encoderPos > (modeMax+10)) encoderPos = modeMax; // check we haven't gone out of bounds below 0 and correct if we have
@@ -368,7 +403,261 @@ void rotaryMenu() {
     setAdmin(3,setting3);
     //code to do other things with setting3 here, perhaps update display 
   }
-} 
+*/
+
+// -------------------------------------------------------
+// TRYING NEW STUFF HERE
+// -------------------------------------------------------
+
+  
+  // If in display mode, use the encoder to cycle through the menu items
+  //
+  if (menuMode == SHOW) {
+    
+    encoderPos &= 4;  // Ensure encoder position is within the valid range 0 to 4 (5 items total)
+    switch (encoderPos) {
+      case 0:
+        menuItem = TEL_EQUITORIAL;
+        break;
+      case 1:
+        menuItem = TEL_HORIZONTAL;
+        break;
+      case 2:
+        menuItem = TEL_LATITUDE;
+        break;
+      case 3:
+        menuItem = STAR_RA;
+        break;
+      case 4:
+        menuItem = STAR_HA;
+        break;
+    }
+    if (buttonPressed) menuMode = EDIT;
+  } 
+  
+  // Perform the necessary edit actions for each menu item
+  //
+  if (menuMode == EDIT) {
+    switch (menuItem) {
+      case TEL_EQUITORIAL:    // There is nothing to edit here
+        menuMode = SHOW;      // Change back to display mode
+        break;
+      case TEL_HORIZONTAL:    // There is nothing to edit here
+        menuMode = SHOW;      // Change back to display mode
+        break;
+      case TEL_LATITUDE:    // There are three fields to edit plus a confirmation
+        switch (editingField) {
+          case VALUE1:    // Latitude hours
+            if (firstEdit == YES) {
+              encoderPos = latHH + 90;  // Valid range is -90 to +90, so offset by 90.
+              firstEdit = NO;
+            }
+            // The valid range is -90 to +90.  This makes 181 valid values
+            encoderPos &= 180;  // Ensure encoder position is within the valid range 0 to 180
+            value1temp = encoderPos - 90;
+            if (buttonPressed) {  // Start editing value 2
+              editingField = VALUE2;
+              firstEdit = YES;
+            }
+            break; // End of editing value 1
+            
+          case VALUE2:    // Latitude minutes
+            if (firstEdit == YES) {
+              encoderPos = latMM;
+              firstEdit = NO;
+            }
+            encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
+            value2temp = encoderPos;
+            if (buttonPressed) {  // Start editing value 3
+              editingField = VALUE3;
+              firstEdit = YES;
+            }
+            break; // End of editing value 2
+            
+          case VALUE3:    // Latitude seconds
+            if (firstEdit == YES) {
+              encoderPos = latSS;
+              firstEdit = NO;
+            }
+            encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
+            value3temp = encoderPos;
+            if (buttonPressed) {  // Move on to confirmation
+              editingField = CONFIRMATION;
+              firstEdit = YES;
+            }
+            break; // End of editing value 3
+            
+          case CONFIRMATION:
+            if (firstEdit == YES) {
+              encoderPos = 0;
+              firstEdit = NO;
+            }
+            encoderPos &= 1;  // Ensure encoder position is within the valid range 0 to 1
+            switch (encoderPos) {
+              case 0:
+                confirmation = NO;
+                break;
+              case 1:
+                confirmation = YES;
+                break;
+            }
+            if (buttonPressed) {  // We are finished editing
+              if (confirmation == YES) {
+                // Copy the new values from temporary into live variables
+                latHH = value1temp;
+                latMM = value2temp;
+                latSS = value3temp;
+              }
+              menuMode = SHOW;
+              editingField = VALUE1;
+              firstEdit = YES;
+            }
+            break; // End of confirmation
+        }
+        break; // End of editing latitude
+        
+      case STAR_RA:    // There are three fields to edit plus a confirmation
+        switch (editingField) {
+          case VALUE1:    // Right ascension hours
+            if (firstEdit == YES) {
+              encoderPos = poleAR_HH;
+              firstEdit = NO;
+            }
+            encoderPos &= 24;  // Ensure encoder position is within the valid range 0 to 24
+            value1temp = encoderPos;
+            if (buttonPressed) {  // Start editing value 2
+              editingField = VALUE2;
+              firstEdit = YES;
+            }
+            break; // End of editing value 1
+            
+          case VALUE2:    // Right ascension minutes
+            if (firstEdit == YES) {
+              encoderPos = poleAR_MM;
+              firstEdit = NO;
+            }
+            encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
+            value2temp = encoderPos;
+            if (buttonPressed) {  // Start editing value 3
+              editingField = VALUE3;
+              firstEdit = YES;
+            }
+            break; // End of editing value 2
+            
+          case VALUE3:    // Right ascension seconds
+            if (firstEdit == YES) {
+              encoderPos = poleAR_SS;
+              firstEdit = NO;
+            }
+            encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
+            value3temp = encoderPos;
+            if (buttonPressed) {  // Move on to confirmation
+              editingField = CONFIRMATION;
+              firstEdit = YES;
+            }
+            break; // End of editing value 3
+            
+          case CONFIRMATION:
+            if (firstEdit == YES) {
+              encoderPos = 0;
+              firstEdit = NO;
+            }
+            encoderPos &= 1;  // Ensure encoder position is within the valid range 0 to 1
+            switch (encoderPos) {
+              case 0:
+                confirmation = NO;
+                break;
+              case 1:
+                confirmation = YES;
+                break;
+            }
+            if (buttonPressed) {  // We are finished editing
+              if (confirmation == YES) {
+                // Copy the new values from temporary into live variables
+                poleAR_HH = value1temp;
+                poleAR_MM = value2temp;
+                poleAR_SS = value3temp;
+              }
+              menuMode = SHOW;
+              editingField = VALUE1;
+              firstEdit = YES;
+            }
+            break; // End of confirmation
+        }
+        break; // End of editing star right ascension
+        
+      case STAR_HA:    // There are three fields to edit plus a confirmation
+        switch (editingField) {
+          case VALUE1:    // Right ascension hours
+            if (firstEdit == YES) {
+              encoderPos = poleH_HH;
+              firstEdit = NO;
+            }
+            encoderPos &= 24;  // Ensure encoder position is within the valid range 0 to 24
+            value1temp = encoderPos;
+            if (buttonPressed) {  // Start editing value 2
+              editingField = VALUE2;
+              firstEdit = YES;
+            }
+            break; // End of editing value 1
+            
+          case VALUE2:    // Right ascension minutes
+            if (firstEdit == YES) {
+              encoderPos = poleH_MM;
+              firstEdit = NO;
+            }
+            encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
+            value2temp = encoderPos;
+            if (buttonPressed) {  // Start editing value 3
+              editingField = VALUE3;
+              firstEdit = YES;
+            }
+            break; // End of editing value 2
+            
+          case VALUE3:    // Right ascension seconds
+            if (firstEdit == YES) {
+              encoderPos = poleH_SS;
+              firstEdit = NO;
+            }
+            encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
+            value3temp = encoderPos;
+            if (buttonPressed) {  // Move on to confirmation
+              editingField = CONFIRMATION;
+              firstEdit = YES;
+            }
+            break; // End of editing value 3
+            
+          case CONFIRMATION:
+            if (firstEdit == YES) {
+              encoderPos = 0;
+              firstEdit = NO;
+            }
+            encoderPos &= 1;  // Ensure encoder position is within the valid range 0 to 1
+            switch (encoderPos) {
+              case 0:
+                confirmation = NO;
+                break;
+              case 1:
+                confirmation = YES;
+                break;
+            }
+            if (buttonPressed) {  // We are finished editing
+              if (confirmation == YES) {
+                // Copy the new values from temporary into live variables
+                poleH_HH = value1temp;
+                poleH_MM = value2temp;
+                poleH_SS = value3temp;
+              }
+              menuMode = SHOW;
+              editingField = VALUE1;
+              firstEdit = YES;
+            }
+            break; // End of confirmation
+      }
+      break; // End of editing star right ascension 
+    }
+  }
+}
 
 // Carry out common activities each time a setting is changed
 void setAdmin(byte name, byte setting){
@@ -381,6 +670,7 @@ void setAdmin(byte name, byte setting){
   Mode = 0; // go back to top level of menu, now that we've set values
   Serial.println("Main Menu"); //DEBUGGING
 }
+
 
 // Process rotary encoder input
 // Debounce is implemented using a lookup table approach

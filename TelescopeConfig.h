@@ -7,7 +7,8 @@
 // Define the number of pulses that your encoder (1 and 2) gives by turn, and multiply by 4
 // In my case: 600 x 15 x 4  (600 pulses by turn; 15 is the gear ratio), so:
 long pulses_enc1 = 36000;              
-long pulses_enc2 = 36000;             
+long pulses_enc2 = 36000;       
+
 
 // Define DUE's pins
 #define enc_1A 2            // define DUE pin to encoder 1-channel A                     
@@ -23,7 +24,7 @@ int latHH = 40;    // this means 40º North
 int latMM = 33;
 int latSS = 20;
 
-// enter Pole Star right ascention (AR: HH:MM:SS)
+// enter Pole Star right ascension (AR: HH:MM:SS)
 int poleAR_HH = 2;    // this means 2 hours, 52 minutes and 16 seconds
 int poleAR_MM = 52;
 int poleAR_SS = 16;
