@@ -112,6 +112,8 @@ enum yesOrNo {
 };
 enum yesOrNo firstEdit;
 enum yesOrNo confirmation;
+enum yesOrNo newEncPos;
+enum yesOrNo buttonPressed;
 
 // For encoder input processing
 static uint8_t prevNextCode = 0;
@@ -353,11 +355,12 @@ void AZ_to_EQ()
 
 void rotaryMenu() {
   
-  //DEBUGGING: Rotary encoder update display if turned
-  if(oldEncPos != encoderPos) { // DEBUGGING
+  // Check for new encoder position
+  if(oldEncPos != encoderPos) {
+    newEncPos = YES;
     Serial.println(encoderPos);// DEBUGGING. Sometimes the serial monitor may show a value just outside modeMax due to this function. The menu shouldn't be affected.
-    oldEncPos = encoderPos;// DEBUGGING
-  }// DEBUGGING
+    oldEncPos = encoderPos;
+  } else newEncPos = NO;
   
 
   // Button debounce
@@ -368,11 +371,11 @@ void rotaryMenu() {
       oldButtonState =  buttonState;  // remember for next time 
       if (buttonState == LOW){
         Serial.println ("Button pressed"); // DEBUGGING: print that button has been pressed
-        buttonPressed = 1;
+        buttonPressed = YES;
       }
       else {
         Serial.println ("Button released"); // DEBUGGING: print that button has been released
-        buttonPressed = 0;  
+        buttonPressed = NO;  
       }  
     }  // end if debounce time up
   } // end of state change
@@ -446,7 +449,7 @@ void rotaryMenu() {
         menuItem = STAR_HA;
         break;
     }
-    if (buttonPressed) menuMode = EDIT;
+    if (buttonPressed == YES) menuMode = EDIT;
   } 
   
   // Perform the necessary edit actions for each menu item
@@ -469,7 +472,7 @@ void rotaryMenu() {
             // The valid range is -90 to +90.  This makes 181 valid values
             encoderPos &= 180;  // Ensure encoder position is within the valid range 0 to 180
             value1temp = encoderPos - 90;
-            if (buttonPressed) {  // Start editing value 2
+            if (buttonPressed == YES) {  // Start editing value 2
               editingField = VALUE2;
               firstEdit = YES;
             }
@@ -482,7 +485,7 @@ void rotaryMenu() {
             }
             encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
             value2temp = encoderPos;
-            if (buttonPressed) {  // Start editing value 3
+            if (buttonPressed == YES) {  // Start editing value 3
               editingField = VALUE3;
               firstEdit = YES;
             }
@@ -495,7 +498,7 @@ void rotaryMenu() {
             }
             encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
             value3temp = encoderPos;
-            if (buttonPressed) {  // Move on to confirmation
+            if (buttonPressed == YES) {  // Move on to confirmation
               editingField = CONFIRMATION;
               firstEdit = YES;
             }
@@ -515,7 +518,7 @@ void rotaryMenu() {
                 confirmation = YES;
                 break;
             }
-            if (buttonPressed) {  // We are finished editing
+            if (buttonPressed == YES) {  // We are finished editing
               if (confirmation == YES) {
                 // Copy the new values from temporary into live variables
                 latHH = value1temp;
@@ -539,7 +542,7 @@ void rotaryMenu() {
             }
             encoderPos &= 24;  // Ensure encoder position is within the valid range 0 to 24
             value1temp = encoderPos;
-            if (buttonPressed) {  // Start editing value 2
+            if (buttonPressed == YES) {  // Start editing value 2
               editingField = VALUE2;
               firstEdit = YES;
             }
@@ -552,7 +555,7 @@ void rotaryMenu() {
             }
             encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
             value2temp = encoderPos;
-            if (buttonPressed) {  // Start editing value 3
+            if (buttonPressed == YES) {  // Start editing value 3
               editingField = VALUE3;
               firstEdit = YES;
             }
@@ -565,7 +568,7 @@ void rotaryMenu() {
             }
             encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
             value3temp = encoderPos;
-            if (buttonPressed) {  // Move on to confirmation
+            if (buttonPressed == YES) {  // Move on to confirmation
               editingField = CONFIRMATION;
               firstEdit = YES;
             }
@@ -585,7 +588,7 @@ void rotaryMenu() {
                 confirmation = YES;
                 break;
             }
-            if (buttonPressed) {  // We are finished editing
+            if (buttonPressed == YES) {  // We are finished editing
               if (confirmation == YES) {
                 // Copy the new values from temporary into live variables
                 poleAR_HH = value1temp;
@@ -609,7 +612,7 @@ void rotaryMenu() {
             }
             encoderPos &= 24;  // Ensure encoder position is within the valid range 0 to 24
             value1temp = encoderPos;
-            if (buttonPressed) {  // Start editing value 2
+            if (buttonPressed == YES) {  // Start editing value 2
               editingField = VALUE2;
               firstEdit = YES;
             }
@@ -622,7 +625,7 @@ void rotaryMenu() {
             }
             encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
             value2temp = encoderPos;
-            if (buttonPressed) {  // Start editing value 3
+            if (buttonPressed == YES) {  // Start editing value 3
               editingField = VALUE3;
               firstEdit = YES;
             }
@@ -635,7 +638,7 @@ void rotaryMenu() {
             }
             encoderPos &= 59;  // Ensure encoder position is within the valid range 0 to 59
             value3temp = encoderPos;
-            if (buttonPressed) {  // Move on to confirmation
+            if (buttonPressed == YES) {  // Move on to confirmation
               editingField = CONFIRMATION;
               firstEdit = YES;
             }
@@ -655,7 +658,7 @@ void rotaryMenu() {
                 confirmation = YES;
                 break;
             }
-            if (buttonPressed) {  // We are finished editing
+            if (buttonPressed == YES) {  // We are finished editing
               if (confirmation == YES) {
                 // Copy the new values from temporary into live variables
                 poleH_HH = value1temp;
@@ -671,6 +674,10 @@ void rotaryMenu() {
       break; // End of editing star right ascension 
     }
   }
+
+  // Update OLED display on encoder change or button pressed
+  if (newEncPos == YES or buttonPressed == YES) update_OLED();
+
 }
 
 // Carry out common activities each time a setting is changed
