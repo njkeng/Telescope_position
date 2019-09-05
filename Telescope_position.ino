@@ -48,15 +48,19 @@ volatile long   encoderValue2 = 0;
 char  input[20];
 char  txAR[10];
 char  txDEC[11];
-char  OLED_AR[16];
-char  OLED_DEC[16];
 long  TSL;
 unsigned long t_ciclo_acumulado = 0, t_ciclo;
 long    Az_tel_s, Alt_tel_s;
 long    AR_tel_s, DEC_tel_s;
 long    AR_stell_s, DEC_stell_s;
 double  cos_phi, sin_phi;
-double  alt, azi;
+// double  alt, azi;
+
+// Declarations for menu displays
+char  OLED_EQ_AR[16];  // Telescope position in equatorial coordinates
+char  OLED_EQ_DEC[16];
+char  OLED_HO_ALT[16];  // Telescope position in horizontal coordinates
+char  OLED_HO_AZ[16];
 
 // Declarations for menu system
 volatile byte encoderPos = 0; //this variable stores our current value of encoder position. Change to int or uin16_t instead of byte if you want to record a larger range than 0-255
@@ -277,6 +281,8 @@ void AZ_to_EQ()
   long arHH, arMM, arSS;
   long decDEG, decMM, decSS;
   char sDEC_tel;
+  long altHH, altMM, altSS;
+  long azDEG, azMM, azSS;
 
   A_telRAD = (Az_tel_s / 3600.0) * pi / 180.0;
   h_telRAD = (Alt_tel_s / 3600.0) * pi / 180.0;
@@ -311,6 +317,7 @@ void AZ_to_EQ()
     AR_tel_s = AR_tel_s + 86400;
   }
 
+  // Convert decimal equatorial coordinate data to hours, minutes, seconds
   arHH = AR_tel_s / 3600;
   arMM = (AR_tel_s - arHH * 3600) / 60;
   arSS = (AR_tel_s - arHH * 3600) - arMM * 60;
@@ -319,15 +326,29 @@ void AZ_to_EQ()
   decSS = (abs(DEC_tel_s) - decDEG * 3600) - decMM * 60;
   (DEC_tel_s < 0) ? sDEC_tel = 45 : sDEC_tel = 43;
 
-  // Data for Stellarium comms
+  // Equatorial coordinate data for Stellarium comms
   //
   sprintf(txAR, "%02d:%02d:%02d#", int(arHH), int(arMM), int(arSS));
   sprintf(txDEC, "%c%02d%c%02d:%02d#", sDEC_tel, int(decDEG), 223, int(decMM), int(decSS));
 
-  // Data for OLED display
+  // Equatorial coordinate data for OLED display
   //
-  sprintf(OLED_AR,  "RA %02d:%02d:%02d", int(arHH), int(arMM), int(arSS));
-  sprintf(OLED_DEC, "DEC %c%02d'%02d:%02d", sDEC_tel, int(decDEG), int(decMM), int(decSS));
+  sprintf(OLED_EQ_AR,  "RA %02d:%02d:%02d", int(arHH), int(arMM), int(arSS));
+  sprintf(OLED_EQ_DEC, "DEC %c%02d'%02d:%02d", sDEC_tel, int(decDEG), int(decMM), int(decSS));
+
+  // Convert decimal horizontal coordinate data to hours, minutes, seconds
+  altHH = Alt_tel_s / 3600;
+  altMM = (Alt_tel_s - altHH * 3600) / 60;
+  altSS = (Alt_tel_s - altHH * 3600) - altMM * 60;
+  azDEG = abs(Az_tel_s) / 3600;
+  azMM = (abs(Az_tel_s) - azDEG * 3600) / 60;
+  azSS = (abs(Az_tel_s) - azDEG * 3600) - azMM * 60;
+
+  // Horizontal coordinate data for OLED display
+  //
+  sprintf(OLED_HO_ALT,  "Alt %02d:%02d:%02d", int(altHH), int(altMM), int(altSS));
+  sprintf(OLED_HO_AZ,  "Az   %02d:%02d:%02d", int(azDEG), int(azMM), int(azSS));
+
 }
 
 void rotaryMenu() {
