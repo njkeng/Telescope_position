@@ -17,19 +17,27 @@ long pulses_enc2 = 36000;
 #define enc_2B 5            // define DUE pin to encoder 2-channel B  
 #define enc_mA 6            // define DUE pin to menu encoder channel A
 #define enc_mB 7            // define DUE pin to menu encoder channel B    
-#define enc_mButton 8    // Encoder built-in pushbutton
+#define enc_mButton 8       // Encoder built-in pushbutton
+
+enum hemispheres {
+ NORTH,
+ SOUTH 
+};
 
 // enter your latitude (example: North 40º33'20'')
-int latHH = 40;    // this means 40º North
-int latMM = 33;
-int latSS = 20;
+enum hemispheres latHem = NORTH;  // Valid values are NORTH or SOUTH
+int latHH = 1;
+int latMM = 2;
+int latSS = 3;
 
-// enter Pole Star right ascension (AR: HH:MM:SS)
-int poleAR_HH = 2;    // this means 2 hours, 52 minutes and 16 seconds
-int poleAR_MM = 52;
-int poleAR_SS = 16;
+// enter reference star right ascension (AR: HH:MM:SS)
+// for Northern hemisphere, the reference star would normally be the Pole Star (Polaris)
+int starAR_HH = 4;    // this means 2 hours, 52 minutes and 16 seconds
+int starAR_MM = 5;
+int starAR_SS = 6;
 
-// enter Pole Star hour angle (H: HH:MM:SS)
-int poleH_HH = 8;
-int poleH_MM = 32;
-int poleH_SS = 7;
+// enter reference star hour angle (H: HH:MM:SS)
+// for Northern hemisphere, the reference star would normally be the Pole Star (Polaris)
+int starH_HH = 7;
+int starH_MM = 8;
+int starH_SS = 9;
