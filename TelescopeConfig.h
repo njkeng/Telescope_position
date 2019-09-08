@@ -24,6 +24,13 @@ enum hemispheres {
  SOUTH 
 };
 
+
+// Set this to 0 if you want to use the values coded below
+// Set this to 1 if you want to save the values you enter via the menu
+//
+#define use_saved_data 1
+
+
 // enter your latitude (example: North 40º33'20'')
 enum hemispheres latHem = NORTH;  // Valid values are NORTH or SOUTH
 int latHH = 1;

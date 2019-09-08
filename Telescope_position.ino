@@ -153,9 +153,9 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(enc_2A), Encoder2, CHANGE);
   attachInterrupt(digitalPinToInterrupt(enc_2B), Encoder2, CHANGE);
 
-  // Retrieve all stored data from EEPROM
+  // Retrieve stored data from EEPROM
   //
-  getFromEEPROM();
+  if (use_saved_data) getFromEEPROM();
 
   // Pre-calculate data for telescope position
   //
@@ -749,33 +749,40 @@ void rotaryMenu() {
 
     case SAVE_EEPROM:    // Only a yes or no confirmation here
 
-      if (firstEdit == YES) {
-        encoderPos = 0;
-        firstEdit = NO;
-      }
-      encoderMax = 1;
-      if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
-      if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
-      switch (encoderPos) {
-        case 0:
-          confirmation = NO;
-          break;
-        case 1:
-          confirmation = YES;
-          break;
-      }
-      if (buttonPressed == YES) {  // We are finished editing
-        if (confirmation == YES) {
-          // Copy the variables into EEPROM
-          saveToEEPROM();
-          saveState = SAVED;
-        } else saveState = CANCELLED;
-        menuMode = SHOW;
-        editingField = HEMISPHERE;
-        firstEdit = YES;
+      if (use_saved_data) {
+
+        if (firstEdit == YES) {
+          encoderPos = 0;
+          firstEdit = NO;
+        }
+        encoderMax = 1;
+        if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+        if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+        switch (encoderPos) {
+          case 0:
+            confirmation = NO;
+            break;
+          case 1:
+            confirmation = YES;
+            break;
+        }
+        if (buttonPressed == YES) {  // We are finished editing
+          if (confirmation == YES) {
+            // Copy the variables into EEPROM
+            saveToEEPROM();
+            saveState = SAVED;
+          } else saveState = CANCELLED;
+          menuMode = SHOW;
+          editingField = HEMISPHERE;
+          firstEdit = YES;
+          encoderPos = menuItem;
+        }
+      } else {  
+        // If only hard-coded data is to be used
+        //
         encoderPos = menuItem;
+        menuMode = SHOW;      // Change back to display mode
       }
-    
       break; // End of saving to EEPROM 
 
     }
@@ -1068,16 +1075,21 @@ void update_OLED()
 
       switch (menuMode) {
         case SHOW:
-          switch (saveState) {
-            case WAITING:
-              display.println("Click to save");     // Print prompt
-              break;
-            case SAVED:
-              display.println("Saved to EEPROM");     // Print prompt
-              break;
-            case CANCELLED:
-              display.println("Cancelled");     // Print prompt
-              break;
+          if (use_saved_data) {
+            switch (saveState) {
+              case WAITING:
+                display.println("Click to save");     // Print prompt
+                break;
+              case SAVED:
+                display.println("Saved to EEPROM");     // Print prompt
+                break;
+              case CANCELLED:
+                display.println("Cancelled");     // Print prompt
+                break;
+            }
+          } else {
+            display.println("Option is not");     // Print prompt
+            display.println("available");     // Print prompt
           }
           break;
         
