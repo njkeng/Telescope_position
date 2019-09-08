@@ -46,10 +46,14 @@ volatile long   encoderValue1 = 0;
 volatile int    lastEncoded2 = 0;
 volatile long   encoderValue2 = 0;
 
+const long      arcSeconds = 1296000;  // arcseconds per 360 degrees
+
 char  input[20];
 char  txAR[10];
 char  txDEC[11];
 long  TSL;
+long  AltFactor;
+long  AzFactor;
 unsigned long t_ciclo_acumulado = 0, t_ciclo;
 long    Az_tel_s, Alt_tel_s;
 long    AR_tel_s, DEC_tel_s;
@@ -165,6 +169,9 @@ void setup()
   TSL = starAR_HH * 3600 + starAR_MM * 60 + starAR_SS + starH_HH * 3600 + starH_MM * 60 + starH_SS;
   while (TSL >= 86400) TSL = TSL - 86400;
 
+  AltFactor = (arcSeconds / 4) / pulses_enc1;
+  AzFactor = arcSeconds / pulses_enc2;
+
   // Initialize the timer control; also resets all timers
   //
   TimerInit();
@@ -256,6 +263,11 @@ void read_sensors() {
   if (encoderValue2 >= pulses_enc2 || encoderValue2 <= -pulses_enc2) {
     encoderValue2 = 0;
   }
+
+/*
+  // 324000 and 1296000 are arc/sec per 360º
+  // ???? 1500 is related with the gear ratio (how many pulses per 360º)
+  //
   int enc1 = encoderValue1 / 1500;
   long encoder1_temp = encoderValue1 - (enc1 * 1500);
   long map1 = enc1 * map(1500, 0, pulses_enc1, 0, 324000);
@@ -265,6 +277,10 @@ void read_sensors() {
 
   Alt_tel_s = map1 + map (encoder1_temp, 0, pulses_enc1, 0, 324000);
   Az_tel_s  = map2 + map (encoder2_temp, 0, pulses_enc2, 0, 1296000);
+*/
+
+  Alt_tel_s = encoderValue1 * AltFactor;
+  Az_tel_s  = encoderValue2 * AzFactor;
 
   if (Az_tel_s < 0) Az_tel_s = 1296000 + Az_tel_s;
   if (Az_tel_s >= 1296000) Az_tel_s = Az_tel_s - 1296000 ;
@@ -421,7 +437,9 @@ void rotaryMenu() {
   // If in display mode, use the encoder to cycle through the menu items
   //
   if (menuMode == SHOW) {
+
     encoderMax = SAVE_EEPROM;
+    
     if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
     if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
     switch (encoderPos) {
