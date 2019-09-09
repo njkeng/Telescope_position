@@ -35,7 +35,7 @@ enum hemispheres {
 // enter your latitude (example: North 40º33'20'')
 enum hemispheres latHem = SOUTH;  // Valid values are NORTH or SOUTH
 int latHH = 21;
-int latMM = 08;
+int latMM = 8;
 int latSS = 17;
 
 // enter reference star right ascension (AR: HH:MM:SS)
