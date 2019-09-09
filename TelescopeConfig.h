@@ -33,22 +33,22 @@ enum hemispheres {
 };
 
 // enter your latitude (example: North 40º33'20'')
-enum hemispheres latHem = NORTH;  // Valid values are NORTH or SOUTH
-int latHH = 1;
-int latMM = 2;
-int latSS = 3;
+enum hemispheres latHem = SOUTH;  // Valid values are NORTH or SOUTH
+int latHH = 21;
+int latMM = 08;
+int latSS = 17;
 
 // enter reference star right ascension (AR: HH:MM:SS)
 // for Northern hemisphere, the reference star would normally be the Pole Star (Polaris)
-int starAR_HH = 4;    // this means 2 hours, 52 minutes and 16 seconds
-int starAR_MM = 5;
-int starAR_SS = 6;
+int starAR_HH = 22;    // this means 2 hours, 52 minutes and 16 seconds
+int starAR_MM = 58;
+int starAR_SS = 45;
 
 // enter reference star hour angle (H: HH:MM:SS)
 // for Northern hemisphere, the reference star would normally be the Pole Star (Polaris)
-int starH_HH = 7;
-int starH_MM = 8;
-int starH_SS = 9;
+int starH_HH = 19;
+int starH_MM = 44;
+int starH_SS = 29;
 
 // For DEBUGGING use only
 // SETTING THIS FLAG WILL MAKE THE COORDINATES CALCULATE INCORRECTLY
