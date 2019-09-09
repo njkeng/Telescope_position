@@ -19,17 +19,15 @@ long pulses_enc2 = 36000;
 #define enc_mB 7            // define DUE pin to menu encoder channel B    
 #define enc_mButton 8       // Encoder built-in pushbutton
 
-enum hemispheres {
- NORTH,
- SOUTH 
-};
-
-
 // Set this to 0 if you want to use the values coded below
 // Set this to 1 if you want to save the values you enter via the menu
 //
 #define use_saved_data 1
 
+enum hemispheres {
+ NORTH,
+ SOUTH 
+};
 
 // enter your latitude (example: North 40º33'20'')
 enum hemispheres latHem = NORTH;  // Valid values are NORTH or SOUTH
@@ -48,3 +46,8 @@ int starAR_SS = 6;
 int starH_HH = 7;
 int starH_MM = 8;
 int starH_SS = 9;
+
+// For DEBUGGING use only
+// SETTING THIS FLAG WILL MAKE THE COORDINATES CALCULATE INCORRECTLY
+//
+#define show_encoders 1

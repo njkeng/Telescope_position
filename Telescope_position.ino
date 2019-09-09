@@ -93,7 +93,8 @@ enum menuItems {
   TEL_LATITUDE,     // Latitude of our observing position
   STAR_RA,          // Right ascension of our reference star
   STAR_HA,          // Hour angle of our reference star
-  SAVE_EEPROM        // Save latitude, star RA and star HA to EEPROM memory
+  SAVE_EEPROM,       // Save latitude, star RA and star HA to EEPROM memory
+  SHOW_ENCODERS     // For debugging use, show encoder count values. THIS WILL MAKE THE COORDINATES CALCULATE INCORRECTLY
 };
 enum menuItems menuItem;
 
@@ -260,8 +261,11 @@ void communication()
 void read_sensors() {
   long h_deg, h_min, h_seg, A_deg, A_min, A_seg;
 
-  if (encoderValue2 >= pulses_enc2 || encoderValue2 <= -pulses_enc2) {
-    encoderValue2 = 0;
+
+  if (show_encoders == 0) {  // For debugging ONLY. If set, this will make coordinates calculate INCORRECTLY
+    if (encoderValue2 >= pulses_enc2 || encoderValue2 <= -pulses_enc2) {
+      encoderValue2 = 0;
+    }
   }
 
 /*
@@ -399,9 +403,14 @@ void AZ_to_EQ()
 
   // Equatorial coordinate data for OLED display
   //
-  sprintf(OLED_EQ_AR,  "RA   %02d:%02d:%02d", int(arHH), int(arMM), int(arSS));
-  sprintf(OLED_EQ_DEC, "DEC %c%02d'%02d:%02d", sDEC_tel, int(decDEG), int(decMM), int(decSS));
-
+  if (show_encoders) {  // For debugging ONLY. If set, this will make coordinates calculate INCORRECTLY
+    sprintf(OLED_EQ_AR,   "RA  INVALID");
+    sprintf(OLED_EQ_DEC,  "DEC INVALID");
+  } else {
+    sprintf(OLED_EQ_AR,  "RA   %02d:%02d:%02d", int(arHH), int(arMM), int(arSS));
+    sprintf(OLED_EQ_DEC, "DEC %c%02d'%02d:%02d", sDEC_tel, int(decDEG), int(decMM), int(decSS));
+  }
+  
   // Convert decimal horizontal coordinate data to hours, minutes, seconds
   altHH = Alt_tel_s / 3600;
   altMM = (Alt_tel_s - altHH * 3600) / 60;
@@ -412,9 +421,13 @@ void AZ_to_EQ()
 
   // Horizontal coordinate data for OLED display
   //
-  sprintf(OLED_HO_ALT, "Alt %02d:%02d:%02d", int(altHH), int(altMM), int(altSS));
-  sprintf(OLED_HO_AZ,  "Az  %02d:%02d:%02d", int(azDEG), int(azMM), int(azSS));
-
+  if (show_encoders) {  // For debugging ONLY. If set, this will make coordinates calculate INCORRECTLY
+    sprintf(OLED_HO_ALT,  "Alt INVALID");
+    sprintf(OLED_HO_AZ,   "Az  INVALID");
+  } else {  
+    sprintf(OLED_HO_ALT, "Alt %02d:%02d:%02d", int(altHH), int(altMM), int(altSS));
+    sprintf(OLED_HO_AZ,  "Az  %02d:%02d:%02d", int(azDEG), int(azMM), int(azSS));
+  }
 }
 
 
@@ -438,7 +451,8 @@ void rotaryMenu() {
   //
   if (menuMode == SHOW) {
 
-    encoderMax = SAVE_EEPROM;
+    if (show_encoders) encoderMax = SHOW_ENCODERS;
+    else encoderMax = SAVE_EEPROM;
     
     if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
     if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
@@ -460,6 +474,9 @@ void rotaryMenu() {
         break;
       case 5:
         menuItem = SAVE_EEPROM;
+        break;
+      case 6:
+        menuItem = SHOW_ENCODERS;
         break;
     }
     if (buttonPressed == YES) {
@@ -803,9 +820,14 @@ void rotaryMenu() {
       }
       break; // End of saving to EEPROM 
 
-    }
+      case SHOW_ENCODERS:    // There is nothing to edit here
+        encoderPos = menuItem;
+        menuMode = SHOW;      // Change back to display mode
+        break;
+
+    }  // End of switch menuItem
     
-  }
+  }  // End of menuMode = edit
 
   // Clear save state flag
   //
@@ -1136,6 +1158,14 @@ void update_OLED()
       } // End menuMode switch
 
       break;
+
+    case SHOW_ENCODERS:
+      display.println("Encoder count");       // Print title
+      display.println("");                    // Print blank line
+      display.println(encoderValue1);         // Print encoder1 count
+      display.println(encoderValue2);         // Print encoder2 count
+      break;
+
   }  // End menuItem switch
 
   display.display();  // Update the OLED display
