@@ -5,9 +5,12 @@
 
 
 // Define the number of pulses that your encoder (1 and 2) gives by turn, and multiply by 4
-// In my case: 600 x 15 x 4  (600 pulses by turn; 15 is the gear ratio), so:
-long pulses_enc1 = 36000;              
-long pulses_enc2 = 36000;       
+// Example: 600 x 15 x 4  (600 pulses by turn; 15 is the gear ratio)
+// OR
+// Calibrate by performing many revolutions (50?) and keep track of the count of encoder pulses
+//
+long pulses_enc1 = 46331;              
+long pulses_enc2 = 46277;       
 
 
 // Define DUE's pins
@@ -50,4 +53,4 @@ int starH_SS = 9;
 // For DEBUGGING use only
 // SETTING THIS FLAG WILL MAKE THE COORDINATES CALCULATE INCORRECTLY
 //
-#define show_encoders 1
+#define show_encoders 0
