@@ -190,7 +190,7 @@ void setup()
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   //
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
-    Serial.println(F("SSD1306 allocation failed"));
+//    Serial.println(F("SSD1306 allocation failed"));
     for(;;); // Don't proceed, loop forever
   }
 
@@ -268,20 +268,18 @@ void read_sensors() {
     }
   }
 
-/*
   // 324000 and 1296000 are arc/sec per 360º
   // ???? 1500 is related with the gear ratio (how many pulses per 360º)
   //
-  int enc1 = encoderValue1 / 1500;
-  long encoder1_temp = encoderValue1 - (enc1 * 1500);
-  long map1 = enc1 * map(1500, 0, pulses_enc1, 0, 324000);
-  int enc2 = encoderValue2 / 1500;
-  long encoder2_temp = encoderValue2 - (enc2 * 1500);
-  long map2 = enc2 * map(1500, 0, pulses_enc2, 0, 1296000);
-
-  Alt_tel_s = map1 + map (encoder1_temp, 0, pulses_enc1, 0, 324000);
-  Az_tel_s  = map2 + map (encoder2_temp, 0, pulses_enc2, 0, 1296000);
-*/
+//  int enc1 = encoderValue1 / 1500;
+//  long encoder1_temp = encoderValue1 - (enc1 * 1500);
+//  long map1 = enc1 * map(1500, 0, pulses_enc1, 0, 324000);
+//  int enc2 = encoderValue2 / 1500;
+//  long encoder2_temp = encoderValue2 - (enc2 * 1500);
+//  long map2 = enc2 * map(1500, 0, pulses_enc2, 0, 1296000);
+//
+//  Alt_tel_s = map1 + map (encoder1_temp, 0, pulses_enc1, 0, 324000);
+//  Az_tel_s  = map2 + map (encoder2_temp, 0, pulses_enc2, 0, 1296000);
 
   Alt_tel_s = encoderValue1 * AltFactor;
   Az_tel_s  = encoderValue2 * AzFactor;
@@ -438,7 +436,7 @@ void rotaryMenu() {
   // Check for new encoder position
   if(oldEncPos != encoderPos) {
     newEncPos = YES;
-    Serial.println(encoderPos);// DEBUGGING. Sometimes the serial monitor may show a value just outside modeMax due to this function. The menu shouldn't be affected.
+//    Serial.println(encoderPos);// DEBUGGING. Sometimes the serial monitor may show a value just outside modeMax due to this function. The menu shouldn't be affected.
     oldEncPos = encoderPos;
   } else newEncPos = NO;
 
