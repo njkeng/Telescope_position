@@ -46,8 +46,6 @@ volatile long   encoderValue1 = 0;
 volatile int    lastEncoded2 = 0;
 volatile long   encoderValue2 = 0;
 
-const long      arcSeconds = 1296000;  // arcseconds per 360 degrees
-
 char  input[20];
 char  txAR[10];
 char  txDEC[11];
@@ -60,6 +58,7 @@ long    AR_tel_s, DEC_tel_s;
 long    AR_stell_s, DEC_stell_s;
 double  cos_phi, sin_phi;
 // double  alt, azi;
+int hemCorrectLat;
 
 // Declarations for menu displays
 char  OLED_EQ_AR[16];  // Telescope position in equatorial coordinates
@@ -164,14 +163,15 @@ void setup()
 
   // Pre-calculate data for telescope position
   //
-  cos_phi = cos((((latHH * 3600) + (latMM * 60) + latSS) / 3600.0) * pi / 180.0);
-  sin_phi = sin((((latHH * 3600) + (latMM * 60) + latSS) / 3600.0) * pi / 180.0);
+  if (latHem == NORTH) hemCorrectLat = latHH;
+  else hemCorrectLat = -latHH;
+  cos_phi = cos((((hemCorrectLat * 3600) + (latMM * 60) + latSS) / 3600.0) * pi / 180.0);
+  sin_phi = sin((((hemCorrectLat * 3600) + (latMM * 60) + latSS) / 3600.0) * pi / 180.0);
 
+  // Local sidereal time
+  //
   TSL = starAR_HH * 3600 + starAR_MM * 60 + starAR_SS + starH_HH * 3600 + starH_MM * 60 + starH_SS;
   while (TSL >= 86400) TSL = TSL - 86400;
-
-  AltFactor = (arcSeconds / 4) / pulses_enc1;
-  AzFactor = arcSeconds / pulses_enc2;
 
   // Initialize the timer control; also resets all timers
   //
@@ -193,7 +193,6 @@ void setup()
 //    Serial.println(F("SSD1306 allocation failed"));
     for(;;); // Don't proceed, loop forever
   }
-
 }
 
 //--------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -234,7 +233,6 @@ void loop()
     update_OLED();
     TimerStart(&pTimerLCD, LCD_FREQ);
   }
-
 }  // End loop
 
 
@@ -261,35 +259,29 @@ void communication()
 void read_sensors() {
   long h_deg, h_min, h_seg, A_deg, A_min, A_seg;
 
-
-  if (show_encoders == 0) {  // For debugging ONLY. If set, this will make coordinates calculate INCORRECTLY
+  if (show_encoders == 0) {  // Show encoders is for debugging ONLY. If set, this will make coordinates calculate INCORRECTLY
     if (encoderValue2 >= pulses_enc2 || encoderValue2 <= -pulses_enc2) {
       encoderValue2 = 0;
     }
   }
 
   // 324000 and 1296000 are arc/sec per 360º
-  // ???? 1500 is related with the gear ratio (how many pulses per 360º)
   //
-//  int enc1 = encoderValue1 / 1500;
-//  long encoder1_temp = encoderValue1 - (enc1 * 1500);
+  int enc1 = encoderValue1 / 1500;
+  long encoder1_temp = encoderValue1 - (enc1 * 1500);
 //  long map1 = enc1 * map(1500, 0, pulses_enc1, 0, 324000);
-//  int enc2 = encoderValue2 / 1500;
-//  long encoder2_temp = encoderValue2 - (enc2 * 1500);
-//  long map2 = enc2 * map(1500, 0, pulses_enc2, 0, 1296000);
-//
-//  Alt_tel_s = map1 + map (encoder1_temp, 0, pulses_enc1, 0, 324000);
-//  Az_tel_s  = map2 + map (encoder2_temp, 0, pulses_enc2, 0, 1296000);
+  long map1 = enc1 * map(1500, 0, pulses_enc1, 0, 1296000);
+  int enc2 = encoderValue2 / 1500;
+  long encoder2_temp = encoderValue2 - (enc2 * 1500);
+  long map2 = enc2 * map(1500, 0, pulses_enc2, 0, 1296000);
 
-  Alt_tel_s = encoderValue1 * AltFactor;
-  Az_tel_s  = encoderValue2 * AzFactor;
+//  Alt_tel_s = map1 + map (encoder1_temp, 0, pulses_enc1, 0, 324000);
+  Alt_tel_s = map1 + map (encoder1_temp, 0, pulses_enc1, 0, 1296000);
+  Az_tel_s  = map2 + map (encoder2_temp, 0, pulses_enc2, 0, 1296000);
 
   if (Az_tel_s < 0) Az_tel_s = 1296000 + Az_tel_s;
   if (Az_tel_s >= 1296000) Az_tel_s = Az_tel_s - 1296000 ;
-
 }
-
-
 
 // Process the Altitude rotary encoder input
 //
@@ -301,7 +293,6 @@ void Encoder1() {
   lastEncoded1 = encoded1;
 }
 
-
 // Process the Azimuth rotary encoder input
 //
 void Encoder2() {
@@ -312,8 +303,6 @@ void Encoder2() {
   if (sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoderValue2 --;
   lastEncoded2 = encoded2;
 }
-
-
 
 // Process the Menu rotary encoder input
 // Debounce is implemented using a lookup table approach
@@ -410,6 +399,7 @@ void AZ_to_EQ()
   }
   
   // Convert decimal horizontal coordinate data to hours, minutes, seconds
+  //
   altHH = Alt_tel_s / 3600;
   altMM = (Alt_tel_s - altHH * 3600) / 60;
   altSS = (Alt_tel_s - altHH * 3600) - altMM * 60;
@@ -434,13 +424,14 @@ void AZ_to_EQ()
 void rotaryMenu() {
   
   // Check for new encoder position
+  //
   if(oldEncPos != encoderPos) {
     newEncPos = YES;
-//    Serial.println(encoderPos);// DEBUGGING. Sometimes the serial monitor may show a value just outside modeMax due to this function. The menu shouldn't be affected.
     oldEncPos = encoderPos;
   } else newEncPos = NO;
 
   // Read and debounce the encoder pushbutton
+  //
   if (buttonDown(digitalRead(enc_mButton), &menuButtonCount, &menuButtonState, 10UL )) {  // debounce timer is 10 msec
     buttonPressed = YES;
   } else buttonPressed = NO;
@@ -832,12 +823,11 @@ void rotaryMenu() {
   if (menuItem != SAVE_EEPROM) saveState = WAITING;
   
   // Update OLED display on encoder change or button pressed
+  //
   if (newEncPos == YES or buttonPressed == YES) update_OLED();
   buttonPressed = NO;
 
 }  // End of menu logic
-
-
 
 // Display data on OLED
 //
@@ -846,6 +836,7 @@ void update_OLED()
   char h;
   
   // Clear the display buffer
+  //
   display.clearDisplay();
   display.setTextSize(1);           // Normal 1:1 pixel scale
   display.setTextColor(WHITE);      // Draw white text
