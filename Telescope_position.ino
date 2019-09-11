@@ -45,6 +45,8 @@ volatile int    lastEncoded1 = 0;
 volatile long   encoderValue1 = 0;
 volatile int    lastEncoded2 = 0;
 volatile long   encoderValue2 = 0;
+volatile double   refAltPulses = 0;
+volatile double   refAzPulses = 0;
 
 char  input[20];
 char  txAR[10];
@@ -161,7 +163,7 @@ void setup()
   //
   if (use_saved_data) getFromEEPROM();
 
-  // Pre-calculate data for telescope position
+  // Pre-calculate latitude data for telescope position
   //
   if (latHem == NORTH) hemCorrectLat = latHH;
   else hemCorrectLat = -latHH;
@@ -170,8 +172,15 @@ void setup()
 
   // Local sidereal time
   //
-  TSL = starAR_HH * 3600 + starAR_MM * 60 + starAR_SS + starH_HH * 3600 + starH_MM * 60 + starH_SS;
+//  TSL = starAR_HH * 3600 + starAR_MM * 60 + starAR_SS + starH_HH * 3600 + starH_MM * 60 + starH_SS;
+  TSL = LST_HH * 3600 + LST_MM * 60 + LST_SS;
   while (TSL >= 86400) TSL = TSL - 86400;
+
+  // Calculate starting point for the encoders using the reference star data
+  //
+  reference_coords();
+  encoderValue1 = refAltPulses;  // Set the pulse count of encoder 1 to the reference star Altitude
+  encoderValue2 = refAzPulses;   // Set the pulse count of encoder 2 to the reference star Azimuth
 
   // Initialize the timer control; also resets all timers
   //
@@ -693,13 +702,13 @@ void rotaryMenu() {
             
           case VALUE1:    // Right ascension hours
             if (firstEdit == YES) {
-              encoderPos = starH_HH;
-              value1temp = starH_HH;
-              value2temp = starH_MM;
-              value3temp = starH_SS;
+              encoderPos = starDec_DD;
+              value1temp = starDec_DD;
+              value2temp = starDec_MM;
+              value3temp = starDec_SS;
               firstEdit = NO;
             }
-            encoderMax = 23;
+            encoderMax = fixMe 359;
             if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             value1temp = encoderPos;
@@ -711,7 +720,7 @@ void rotaryMenu() {
             
           case VALUE2:    // Right ascension minutes
             if (firstEdit == YES) {
-              encoderPos = starH_MM;
+              encoderPos = starDec_MM;
               firstEdit = NO;
             }
             encoderMax = 59;
@@ -726,7 +735,7 @@ void rotaryMenu() {
             
           case VALUE3:    // Right ascension seconds
             if (firstEdit == YES) {
-              encoderPos = starH_SS;
+              encoderPos = starDec_SS;
               firstEdit = NO;
             }
             encoderMax = 59;
@@ -758,9 +767,9 @@ void rotaryMenu() {
             if (buttonPressed == YES) {  // We are finished editing
               if (confirmation == YES) {
                 // Copy the new values from temporary into live variables
-                starH_HH = value1temp;
-                starH_MM = value2temp;
-                starH_SS = value3temp;
+                starDec_DD = value1temp;
+                starDec_MM = value2temp;
+                starDec_SS = value3temp;
               }
               menuMode = SHOW;
               editingField = HEMISPHERE;
@@ -847,8 +856,8 @@ void update_OLED()
     case TEL_HORIZONTAL:
       display.println("Horizontal coord");    // Print title
       display.println("");                    // Print blank line
-      display.println(F(OLED_HO_ALT));        // Print altitude
       display.println(F(OLED_HO_AZ));         // Print azimuth
+      display.println(F(OLED_HO_ALT));        // Print altitude
       break;
 
     case TEL_EQUATORIAL:
@@ -1028,7 +1037,7 @@ void update_OLED()
 
       switch (menuMode) {
         case SHOW:
-          sprintf(OLED_Line_BEG, "HA %02d:%02d:%02d", int(starH_HH), int(starH_MM), int(starH_SS));
+          sprintf(OLED_Line_BEG, "HA %02d:%02d:%02d", int(starDec_DD), int(starDec_MM), int(starDec_SS));
           display.println(F(OLED_Line_BEG));
           break;
         case EDIT:
@@ -1241,9 +1250,9 @@ void saveToEEPROM() {
   eeWriteInt(16,starAR_HH);
   eeWriteInt(20,starAR_MM);
   eeWriteInt(24,starAR_SS);
-  eeWriteInt(28,starH_HH);
-  eeWriteInt(32,starH_MM);
-  eeWriteInt(36,starH_SS);
+  eeWriteInt(28,starDec_DD);
+  eeWriteInt(32,starDec_MM);
+  eeWriteInt(36,starDec_SS);
   
 }
 
@@ -1269,9 +1278,9 @@ void getFromEEPROM() {
   starAR_HH = eeGetInt(16);
   starAR_MM = eeGetInt(20);
   starAR_SS = eeGetInt(24);
-  starH_HH = eeGetInt(28);
-  starH_MM = eeGetInt(32);
-  starH_SS = eeGetInt(36);
+  starDec_DD = eeGetInt(28);
+  starDec_MM = eeGetInt(32);
+  starDec_SS = eeGetInt(36);
 }
 
 
@@ -1295,4 +1304,44 @@ int eeGetInt(int pos) {
   *(p + 2)  = dueFlashStorage.read(pos + 2);
   *(p + 3)  = dueFlashStorage.read(pos + 3);
   return val;
+}
+
+// Convert reference star equatorial coordinates to horizontal azimuth and altitude
+// This will be used as a starting reference for the telescope
+//
+void reference_coords() {
+  
+  // H is hour angle of the reference star
+  // H = LST - RA
+  // Calculate hour angle of the reference star in seconds
+  //
+  double refHrAngHrs = LST_HH + LST_MM / 60 + LST_SS / 3600 - starAR_HH - starAR_MM / 60 - starAR_SS / 3600;
+  if (refHrAngHrs < 0) refHrAngHrs += 24;  // Add 24 hours if the hour angle is less than 0
+  
+  // Convert hour angle from hours into radians
+  //
+  double refHraRad = ( refHrAngHrs / 24 ) * 2*pi;
+  
+  // δ is the declination of the reference star in radians
+  //
+  double refDecRad= ( starDec_DD + starDec_MM / 60 + starDec_SS / 3600 ) * pi / 180;
+  
+  // Given H, φ and δ, we require azimuth A and altitude a
+  // φ is the latitude of the observing position
+  // Calcualate reference star altitude a
+  // a = asin(sin(δ) sin(φ) + cos(δ) cos(φ) cos(H))
+  //
+  double refAltRad = asin( sin(refDecRad)* sin_phi + cos(refDecRad) * cos_phi * cos(refHraRad) );
+  
+  // Calcualte reference star azimuth A
+  // A = asin( - sin(H) cos(δ) / cos(a) )
+  //
+  double refAzRad = asin( - sin(refHraRad) * cos(refDecRad) / cos(refAltRad) );
+  if (refAzRad < 0) refAzRad += pi; // Change range of reference Azimuth from (-180 to +180) to (0 to 360) degrees
+  
+  // Convert Altitude and Azimuth angles into the equivalent number of encoder pulses
+  //
+  refAltPulses = (refAltRad * pulses_enc1) / (2 * pi);
+  refAzPulses = (refAzRad * pulses_enc2) / (2 * pi);
+
 }

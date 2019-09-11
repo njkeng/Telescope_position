@@ -47,12 +47,18 @@ int starAR_HH = 8;
 int starAR_MM = 7;
 int starAR_SS = 59;
 
-// enter reference star hour angle (H: HH:MM:SS)
+// enter reference star declination (Dec: DD:MM:SS)
 // for Northern hemisphere, the reference star would normally be the Pole Star (Polaris)
 //
-int starH_HH = 11;
-int starH_MM = 55;
-int starH_SS = 38;
+int starDec_DD = 8;
+int starDec_MM = 7;
+int starDec_SS = 59;
+
+// enter apparent (local) sidereal time (LST: HH:MM:SS)
+//
+int LST_HH = 11;
+int LST_MM = 55;
+int LST_SS = 38;
 
 // For DEBUGGING use only
 // SETTING THIS FLAG WILL MAKE THE COORDINATES CALCULATE INCORRECTLY
