@@ -8,8 +8,8 @@ struct Timer
   bool bExpired;
 };
 
-#define TIMERFREQUENCY                    1000    // Time = 1 sec / TIMERFREQUENCY
-#define LCD_FREQ                    	    100	  // Frequency to update the LCD display
+#define TIMERFREQUENCY                    1000    // Time = 1 sec / TIMERFREQUENCY, so 1000 = 1 millisecond
+#define LCD_FREQ                    	    100	    // Frequency to update the LCD display
 
 
 #define TIMERS                            1       // Number of timers

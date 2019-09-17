@@ -19,7 +19,10 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <DueFlashStorage.h>
+#include <DueFlashStorage.h>  
+
+// Non-volatile memory for the Due.  Standard ATMega library doesn't work.
+//
 DueFlashStorage dueFlashStorage;
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
@@ -39,26 +42,27 @@ extern struct Timer pTimer[];
 
 // Declarations for astronomy
 //
-unsigned long   seg_sideral = 1003;
-const double    pi = 3.14159265358979324;
-volatile int    lastEncoded1 = 0;
-volatile long   encoderValue1 = 0;
-volatile int    lastEncoded2 = 0;
-volatile long   encoderValue2 = 0;
+unsigned long     seg_sideral = 1003;
+const double      pi = 3.14159265358979324;
+volatile int      lastEncoded1 = 0;
+volatile long     encoderValue1 = 0;
+volatile int      lastEncoded2 = 0;
+volatile long     encoderValue2 = 0;
+volatile double   refAltPulses = 0;
+volatile double   refAzPulses = 0;
 
 char  input[20];
 char  txAR[10];
 char  txDEC[11];
-long  TSL;
+long  TSL = 0;
 long  AltFactor;
 long  AzFactor;
 unsigned long t_ciclo_acumulado = 0, t_ciclo;
 long    Az_tel_s, Alt_tel_s;
 long    AR_tel_s, DEC_tel_s;
 long    AR_stell_s, DEC_stell_s;
-double  cos_phi, sin_phi;
-// double  alt, azi;
-int hemCorrectLat;
+double  cos_phi_rad, sin_phi_rad;
+int     hemCorrectLat;
 
 // Declarations for menu displays
 char  OLED_EQ_AR[16];  // Telescope position in equatorial coordinates
@@ -70,29 +74,30 @@ char  OLED_Line_MID[16];
 char  OLED_Line_END[16];
 
 // Declarations for menu system
-volatile byte encoderPos = 0; //this variable stores our current value of encoder position. Change to int or uin16_t instead of byte if you want to record a larger range than 0-255
-volatile byte oldEncPos = 0; //DEBUGGING stores the last encoder position value so we can compare to the current reading and see if it has changed (so we know when to print to the serial monitor)
+//
+volatile int encoderPos = 0; //tStores the current encoder position.
+volatile int oldEncPos = 0; // Stores the last encoder position
+
 // Button reading, including debounce without delay function declarations
+//
 byte oldButtonState = HIGH;  // assume switch open because of pull-up resistor
 const unsigned long debounceTime = 10;  // milliseconds
 unsigned long buttonPressTime;  // when the switch last changed state
+
 // Menu and submenu/setting declarations
-byte Mode = 0;   // This is which menu mode we are in at any given time (top level or one of the submenus)
-const byte modeMax = 3; // This is the number of submenus/settings you want
+//
 byte setting1 = 0;  // a variable which holds the value we set 
 byte setting2 = 0;  // a variable which holds the value we set 
 byte setting3 = 0;  // a variable which holds the value we set 
-/* Note: you may wish to change settingN etc to int, float or boolean to suit your application. 
- Remember to change "void setAdmin(byte name,*BYTE* setting)" to match and probably add some 
- "modeMax"-type overflow code in the "if(Mode == N && buttonPressed)" section*/
 
 enum menuItems {
   TEL_HORIZONTAL,   // Current horizontal coordinates of our telescope
   TEL_EQUATORIAL,   // Current equatorial coordinates of our telescope
+  TEL_LST,          // Local Sidereal Time at our observing position
   TEL_LATITUDE,     // Latitude of our observing position
   STAR_RA,          // Right ascension of our reference star
-  STAR_HA,          // Hour angle of our reference star
-  SAVE_EEPROM,       // Save latitude, star RA and star HA to EEPROM memory
+  STAR_DEC,         // Declination of our reference star
+  SAVE_EEPROM,      // Save latitude, LST, star RA and star DEC to EEPROM memory
   SHOW_ENCODERS     // For debugging use, show encoder count values. THIS WILL MAKE THE COORDINATES CALCULATE INCORRECTLY
 };
 enum menuItems menuItem;
@@ -134,10 +139,11 @@ enum saveStates saveState;
 enum hemispheres hemTemp;
 
 // For encoder input processing
-static uint8_t prevNextCode = 0;
+static uint8_t  prevNextCode = 0;
 static uint16_t store=0;
-static int8_t val;
-int encoderMax = 1;
+static int8_t   val;
+int             encoderMax = 1;
+int             encoderMin = 0;
 
 // For button debounce.  Replicate for each button that needs debouncing
 char menuButtonState = 0;           // state of button
@@ -161,17 +167,23 @@ void setup()
   //
   if (use_saved_data) getFromEEPROM();
 
-  // Pre-calculate data for telescope position
+  // Pre-calculate latitude data for telescope position
   //
-  if (latHem == NORTH) hemCorrectLat = latHH;
-  else hemCorrectLat = -latHH;
-  cos_phi = cos((((hemCorrectLat * 3600) + (latMM * 60) + latSS) / 3600.0) * pi / 180.0);
-  sin_phi = sin((((hemCorrectLat * 3600) + (latMM * 60) + latSS) / 3600.0) * pi / 180.0);
+  if (latHem == NORTH) hemCorrectLat = lat_HH;
+  else hemCorrectLat = -lat_HH;
+  cos_phi_rad = cos((((hemCorrectLat * 3600) + (lat_MM * 60) + lat_SS) / 3600.0) * pi / 180.0);
+  sin_phi_rad = sin((((hemCorrectLat * 3600) + (lat_MM * 60) + lat_SS) / 3600.0) * pi / 180.0);
 
-  // Local sidereal time
+  // Calculate local sidereal time from stored values
   //
-  TSL = starAR_HH * 3600 + starAR_MM * 60 + starAR_SS + starH_HH * 3600 + starH_MM * 60 + starH_SS;
-  while (TSL >= 86400) TSL = TSL - 86400;
+  TSL = LST_HH * 3600 + LST_MM * 60 + LST_SS;
+  while (TSL >= 86400) TSL = TSL - 86400;                
+
+  // Calculate starting point for the encoders using the reference star data
+  //
+  reference_coords();
+  encoderValue1 = (long) refAltPulses;  // Set the pulse count of encoder 1 to the reference star Altitude
+  encoderValue2 = (long) refAzPulses;   // Set the pulse count of encoder 2 to the reference star Azimuth
 
   // Initialize the timer control; also resets all timers
   //
@@ -190,7 +202,6 @@ void setup()
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   //
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
-//    Serial.println(F("SSD1306 allocation failed"));
     for(;;); // Don't proceed, loop forever
   }
 }
@@ -198,7 +209,9 @@ void setup()
 //--------------------------------------------------------------------------------------------------------------------------------------------------------
 void loop()
 {
- 
+
+  // Update local sidereal time with the time it took to execute the last loop()
+  //
   t_ciclo = millis();
   if (t_ciclo_acumulado >= seg_sideral) {
     TSL++;
@@ -208,16 +221,16 @@ void loop()
     }
   }
 
+  // Process the encoder data into equatorial coordinates
+  //
   read_sensors();
   AZ_to_EQ();
   
+  // Stellarium communication
+  //
   if (Serial.available() > 0) {
-    communication();
+//    communication();
   }
-
-  t_ciclo = millis() - t_ciclo;
-  t_ciclo_acumulado = t_ciclo_acumulado + t_ciclo;
-
 
   // Menu system
   //
@@ -233,9 +246,17 @@ void loop()
     update_OLED();
     TimerStart(&pTimerLCD, LCD_FREQ);
   }
+
+  // Record how long it took to run the main loop
+  //
+  t_ciclo = millis() - t_ciclo;
+  t_ciclo_acumulado = t_ciclo_acumulado + t_ciclo;
+
 }  // End loop
 
 
+// Serial comms to Stellarium
+//
 void communication()
 {
   int i = 0;
@@ -255,7 +276,8 @@ void communication()
   }
 }
 
-
+// Calculate altitude and azimuth from encoder pulse counts
+//
 void read_sensors() {
   long h_deg, h_min, h_seg, A_deg, A_min, A_seg;
 
@@ -265,17 +287,15 @@ void read_sensors() {
     }
   }
 
-  // 324000 and 1296000 are arc/sec per 360º
+  // There are 1296000 arc/sec per 360º
   //
   int enc1 = encoderValue1 / 1500;
   long encoder1_temp = encoderValue1 - (enc1 * 1500);
-//  long map1 = enc1 * map(1500, 0, pulses_enc1, 0, 324000);
   long map1 = enc1 * map(1500, 0, pulses_enc1, 0, 1296000);
   int enc2 = encoderValue2 / 1500;
   long encoder2_temp = encoderValue2 - (enc2 * 1500);
   long map2 = enc2 * map(1500, 0, pulses_enc2, 0, 1296000);
 
-//  Alt_tel_s = map1 + map (encoder1_temp, 0, pulses_enc1, 0, 324000);
   Alt_tel_s = map1 + map (encoder1_temp, 0, pulses_enc1, 0, 1296000);
   Az_tel_s  = map2 + map (encoder2_temp, 0, pulses_enc2, 0, 1296000);
 
@@ -347,7 +367,7 @@ void AZ_to_EQ()
   cos_h = cos(h_telRAD);
   sin_A = sin(A_telRAD);
   cos_A = cos(A_telRAD);
-  delta_tel = asin((sin_phi * sin_h) + (cos_phi * cos_h * cos_A));
+  delta_tel = asin((sin_phi_rad * sin_h) + (cos_phi_rad * cos_h * cos_A));
   sin_DEC = sin(delta_tel);
   cos_DEC = cos(delta_tel);
   DEC_tel_s = long((delta_tel * 180.0 / pi) * 3600.0);
@@ -359,7 +379,7 @@ void AZ_to_EQ()
     DEC_tel_s = DEC_tel_s + 324000;
   }
 
-  H_telRAD = acos((sin_h - (sin_phi * sin_DEC)) / (cos_phi * cos_DEC));
+  H_telRAD = acos((sin_h - (sin_phi_rad * sin_DEC)) / (cos_phi_rad * cos_DEC));
   H_tel = long((H_telRAD * 180.0 / pi) * 240.0);
 
   if (sin_A >= 0) {
@@ -442,8 +462,9 @@ void rotaryMenu() {
 
     if (show_encoders) encoderMax = SHOW_ENCODERS;
     else encoderMax = SAVE_EEPROM;
+    encoderMin = 0;
     
-    if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+    if (encoderPos < encoderMin) encoderPos = encoderMin;  
     if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
     switch (encoderPos) {
       case 0:
@@ -453,18 +474,22 @@ void rotaryMenu() {
         menuItem = TEL_EQUATORIAL;
         break;
       case 2:
-        menuItem = TEL_LATITUDE;
+        menuItem = TEL_LST;
+        TSL_dec_to_HMS();
         break;
       case 3:
-        menuItem = STAR_RA;
+        menuItem = TEL_LATITUDE;
         break;
       case 4:
-        menuItem = STAR_HA;
+        menuItem = STAR_RA;
         break;
       case 5:
-        menuItem = SAVE_EEPROM;
+        menuItem = STAR_DEC;
         break;
       case 6:
+        menuItem = SAVE_EEPROM;
+        break;
+      case 7:
         menuItem = SHOW_ENCODERS;
         break;
     }
@@ -483,10 +508,109 @@ void rotaryMenu() {
         encoderPos = menuItem;
         menuMode = SHOW;      // Change back to display mode
         break;
+
       case TEL_EQUATORIAL:    // There is nothing to edit here
         encoderPos = menuItem;
         menuMode = SHOW;      // Change back to display mode
         break;
+
+      case TEL_LST:    // There are three fields to edit plus a confirmation
+        switch (editingField) {
+          case HEMISPHERE:    // Nothing to edit here
+            editingField = VALUE1;  // Skip straight to the next field
+            break;
+ 
+          case VALUE1:    // LST hours
+            if (firstEdit == YES) {
+              TSL_dec_to_HMS();
+              encoderPos = LST_HH;
+              value1temp = LST_HH;
+              value2temp = LST_MM;
+              value3temp = LST_SS;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 23;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+            value1temp = encoderPos;
+            if (buttonPressed == YES) {
+              editingField = VALUE2;
+              firstEdit = YES;
+            }
+            break; // End of editing value 1
+            
+          case VALUE2:    // LST minutes
+            if (firstEdit == YES) {
+              encoderPos = LST_MM;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 59;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+             value2temp = encoderPos;
+            if (buttonPressed == YES) {  // Start editing value 3
+              editingField = VALUE3;
+              firstEdit = YES;
+            }
+            break; // End of editing value 2
+            
+          case VALUE3:    // LST seconds
+            if (firstEdit == YES) {
+              encoderPos = LST_SS;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 59;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+            value3temp = encoderPos;
+            if (buttonPressed == YES) {  // Move on to confirmation
+              editingField = CONFIRMATION;
+              firstEdit = YES;
+            }
+            break; // End of editing value 3
+            
+          case CONFIRMATION:
+            if (firstEdit == YES) {
+              encoderPos = 0;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 1;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+            switch (encoderPos) {
+              case 0:
+                confirmation = NO;
+                break;
+              case 1:
+                confirmation = YES;
+                break;
+            }
+            if (buttonPressed == YES) {  // We are finished editing
+              if (confirmation == YES) {
+                // Copy the new values from temporary into live variables
+                //
+                LST_HH = value1temp;
+                LST_MM = value2temp;
+                LST_SS = value3temp;
+
+                // Convert LST variables into TSL live value
+                //
+                TSL = LST_HH * 3600 + LST_MM * 60 + LST_SS;
+                while (TSL >= 86400) TSL = TSL - 86400;
+              }
+              menuMode = SHOW;
+              editingField = HEMISPHERE;
+              firstEdit = YES;
+              encoderPos = menuItem;
+            }
+            break; // End of confirmation
+        }
+        break; // End of editing LST
+
       case TEL_LATITUDE:    // There are three fields to edit plus a confirmation
         switch (editingField) {
           case HEMISPHERE:    // Latitude hemisphere
@@ -499,13 +623,14 @@ void rotaryMenu() {
                   encoderPos = 1;
                   break;
               }              
-              value1temp = latHH;
-              value2temp = latMM;
-              value3temp = latSS;
+              value1temp = lat_HH;
+              value2temp = lat_MM;
+              value3temp = lat_SS;
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 1;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             switch (encoderPos) {
               case 0:
@@ -523,11 +648,12 @@ void rotaryMenu() {
  
           case VALUE1:    // Latitude hours
             if (firstEdit == YES) {
-              encoderPos = latHH;  // Valid range is 0 to 90
+              encoderPos = lat_HH;  // Valid range is 0 to 90
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 89;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             value1temp = encoderPos;
             if (buttonPressed == YES) {
@@ -538,11 +664,12 @@ void rotaryMenu() {
             
           case VALUE2:    // Latitude minutes
             if (firstEdit == YES) {
-              encoderPos = latMM;
+              encoderPos = lat_MM;
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 59;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
              value2temp = encoderPos;
             if (buttonPressed == YES) {  // Start editing value 3
@@ -553,11 +680,12 @@ void rotaryMenu() {
             
           case VALUE3:    // Latitude seconds
             if (firstEdit == YES) {
-              encoderPos = latSS;
+              encoderPos = lat_SS;
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 59;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             value3temp = encoderPos;
             if (buttonPressed == YES) {  // Move on to confirmation
@@ -571,8 +699,9 @@ void rotaryMenu() {
               encoderPos = 0;
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 1;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             switch (encoderPos) {
               case 0:
@@ -586,9 +715,9 @@ void rotaryMenu() {
               if (confirmation == YES) {
                 // Copy the new values from temporary into live variables
                 latHem = hemTemp;
-                latHH = value1temp;
-                latMM = value2temp;
-                latSS = value3temp;
+                lat_HH = value1temp;
+                lat_MM = value2temp;
+                lat_SS = value3temp;
               }
               menuMode = SHOW;
               editingField = HEMISPHERE;
@@ -598,7 +727,7 @@ void rotaryMenu() {
             break; // End of confirmation
         }
         break; // End of editing latitude
-        
+
       case STAR_RA:    // There are three fields to edit plus a confirmation
         switch (editingField) {
           case HEMISPHERE:
@@ -613,8 +742,9 @@ void rotaryMenu() {
               value3temp = starAR_SS;
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 23;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             value1temp = encoderPos;
             if (buttonPressed == YES) {  // Start editing value 2
@@ -628,8 +758,9 @@ void rotaryMenu() {
               encoderPos = starAR_MM;
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 59;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             value2temp = encoderPos;
             if (buttonPressed == YES) {  // Start editing value 3
@@ -643,8 +774,9 @@ void rotaryMenu() {
               encoderPos = starAR_SS;
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 59;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             value3temp = encoderPos;
             if (buttonPressed == YES) {  // Move on to confirmation
@@ -658,8 +790,9 @@ void rotaryMenu() {
               encoderPos = 0;
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 1;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             switch (encoderPos) {
               case 0:
@@ -685,7 +818,7 @@ void rotaryMenu() {
         }
         break; // End of editing star right ascension
         
-      case STAR_HA:    // There are three fields to edit plus a confirmation
+      case STAR_DEC:    // There are three fields to edit plus a confirmation
         switch (editingField) {
           case HEMISPHERE:    // Right ascension hours
             editingField = VALUE1;
@@ -693,14 +826,15 @@ void rotaryMenu() {
             
           case VALUE1:    // Right ascension hours
             if (firstEdit == YES) {
-              encoderPos = starH_HH;
-              value1temp = starH_HH;
-              value2temp = starH_MM;
-              value3temp = starH_SS;
+              encoderPos = starDec_DD;
+              value1temp = starDec_DD;
+              value2temp = starDec_MM;
+              value3temp = starDec_SS;
               firstEdit = NO;
             }
-            encoderMax = 23;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            encoderMin = -179;
+            encoderMax = 179;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             value1temp = encoderPos;
             if (buttonPressed == YES) {  // Start editing value 2
@@ -711,11 +845,12 @@ void rotaryMenu() {
             
           case VALUE2:    // Right ascension minutes
             if (firstEdit == YES) {
-              encoderPos = starH_MM;
+              encoderPos = starDec_MM;
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 59;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             value2temp = encoderPos;
             if (buttonPressed == YES) {  // Start editing value 3
@@ -726,11 +861,12 @@ void rotaryMenu() {
             
           case VALUE3:    // Right ascension seconds
             if (firstEdit == YES) {
-              encoderPos = starH_SS;
+              encoderPos = starDec_SS;
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 59;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             value3temp = encoderPos;
             if (buttonPressed == YES) {  // Move on to confirmation
@@ -744,8 +880,9 @@ void rotaryMenu() {
               encoderPos = 0;
               firstEdit = NO;
             }
+            encoderMin = 0;
             encoderMax = 1;
-            if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
             if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
             switch (encoderPos) {
               case 0:
@@ -758,9 +895,9 @@ void rotaryMenu() {
             if (buttonPressed == YES) {  // We are finished editing
               if (confirmation == YES) {
                 // Copy the new values from temporary into live variables
-                starH_HH = value1temp;
-                starH_MM = value2temp;
-                starH_SS = value3temp;
+                starDec_DD = value1temp;
+                starDec_MM = value2temp;
+                starDec_SS = value3temp;
               }
               menuMode = SHOW;
               editingField = HEMISPHERE;
@@ -779,8 +916,9 @@ void rotaryMenu() {
           encoderPos = 0;
           firstEdit = NO;
         }
+        encoderMin = 0;
         encoderMax = 1;
-        if (encoderPos > encoderMax + 50) encoderPos = 0;  // Encoder position wraps down from 0 to 255, so if encoder_pos is very large then set back to zero
+        if (encoderPos < encoderMin) encoderPos = encoderMin;  
         if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
         switch (encoderPos) {
           case 0:
@@ -847,8 +985,8 @@ void update_OLED()
     case TEL_HORIZONTAL:
       display.println("Horizontal coord");    // Print title
       display.println("");                    // Print blank line
-      display.println(F(OLED_HO_ALT));        // Print altitude
       display.println(F(OLED_HO_AZ));         // Print azimuth
+      display.println(F(OLED_HO_ALT));        // Print altitude
       break;
 
     case TEL_EQUATORIAL:
@@ -858,6 +996,85 @@ void update_OLED()
       display.println(F(OLED_EQ_DEC));        // Print declination
       break;
 
+    case TEL_LST:
+      display.println("Local Sidereal Time");            // Print title
+      display.println("");                    // Print blank line
+
+      switch (menuMode) {
+        case SHOW:
+          // Convert LST variables into TSL live value
+          //
+          TSL = LST_HH * 3600 + LST_MM * 60 + LST_SS;
+          while (TSL >= 86400) TSL = TSL - 86400;                
+          sprintf(OLED_Line_BEG, "LST %02d:%02d:%02d", int(LST_HH), int(LST_MM), int(LST_SS));
+          display.println(F(OLED_Line_BEG));
+          break;
+        case EDIT:
+          switch (editingField) {
+            case HEMISPHERE:
+              break;
+            case VALUE1:
+              sprintf(OLED_Line_BEG, "LST ");
+              display.print(F(OLED_Line_BEG));
+              // Change font colour to reverse
+              sprintf(OLED_Line_MID, "%02d", int(value1temp));
+              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+              display.print(F(OLED_Line_MID));
+              // Change font colour back to normal
+              sprintf(OLED_Line_END, ":%02d:%02d", int(value2temp), int(value3temp));
+              display.setTextColor(WHITE);      // Draw white text
+              display.println(F(OLED_Line_END));
+              break;
+            case VALUE2:
+              sprintf(OLED_Line_BEG, "LST %02d:", int(value1temp));
+              display.print(F(OLED_Line_BEG));
+              // Change font colour to reverse
+              sprintf(OLED_Line_MID, "%02d", int(value2temp));
+              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+              display.print(F(OLED_Line_MID));
+              // Change font colour back to normal
+              sprintf(OLED_Line_END, ":%02d", int(value3temp));
+              display.setTextColor(WHITE);      // Draw white text
+              display.println(F(OLED_Line_END));
+              break;
+            case VALUE3:
+              sprintf(OLED_Line_BEG, "LST %02d:%02d:", int(value1temp), int(value2temp));
+              display.print(F(OLED_Line_BEG));
+              // Change font colour to reverse
+              sprintf(OLED_Line_MID, "%02d", int(value3temp));
+              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+              display.println(F(OLED_Line_MID));
+              // Change font colour back to normal
+              display.setTextColor(WHITE);      // Draw white text
+              break;
+          case CONFIRMATION:
+            switch(confirmation) {
+              case NO:
+                display.print("Save? ");
+                // Change font colour to reverse
+                display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+                display.print("NO");
+                // Change font colour back to normal
+                display.setTextColor(WHITE);      // Draw white text
+                display.println(" YES");
+                break;
+              case YES:
+                display.print("Save? NO ");
+                // Change font colour to reverse
+                display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+                display.println("YES");
+                // Change font colour back to normal
+                display.setTextColor(WHITE);      // Draw white text
+                break;
+            }  // End confirmation switch
+
+            break;
+          } // End editingField switch
+
+          break;
+      } // End menuMode switch
+      break;  // End of display LST
+
     case TEL_LATITUDE:
       display.println("Latitude");            // Print title
       display.println("");                    // Print blank line
@@ -866,7 +1083,7 @@ void update_OLED()
         case SHOW:
           if (latHem == SOUTH) h = 'S';
           else h = 'N';
-          sprintf(OLED_Line_BEG, "Lat %c%02d:%02d:%02d", h, int(latHH), int(latMM), int(latSS));
+          sprintf(OLED_Line_BEG, "Lat %c%02d:%02d:%02d", h, int(lat_HH), int(lat_MM), int(lat_SS));
           display.println(F(OLED_Line_BEG));
           break;
         case EDIT:
@@ -945,8 +1162,8 @@ void update_OLED()
 
           break;
       } // End menuMode switch
-      break;
-      
+      break;  // End of display latitude
+
     case STAR_RA:
       display.println("Star R Ascension");    // Print title
       display.println("");                    // Print blank line
@@ -1020,15 +1237,15 @@ void update_OLED()
 
         break;
       } // End menuMode switch
-      break;
+      break;  // End of display Right Ascension
 
-    case STAR_HA:
-      display.println("Star Hour Angle");     // Print title
+    case STAR_DEC:
+      display.println("Star Declination");     // Print title
       display.println("");                    // Print blank line
 
       switch (menuMode) {
         case SHOW:
-          sprintf(OLED_Line_BEG, "HA %02d:%02d:%02d", int(starH_HH), int(starH_MM), int(starH_SS));
+          sprintf(OLED_Line_BEG, "Dec %02d:%02d:%02d", int(starDec_DD), int(starDec_MM), int(starDec_SS));
           display.println(F(OLED_Line_BEG));
           break;
         case EDIT:
@@ -1036,7 +1253,7 @@ void update_OLED()
             case HEMISPHERE:
               break;
             case VALUE1:
-              sprintf(OLED_Line_BEG, "HA ");
+              sprintf(OLED_Line_BEG, "Dec ");
               display.print(F(OLED_Line_BEG));
               // Change font colour to reverse
               sprintf(OLED_Line_MID, "%02d", int(value1temp));
@@ -1048,7 +1265,7 @@ void update_OLED()
               display.println(F(OLED_Line_END));
               break;
             case VALUE2:
-              sprintf(OLED_Line_BEG, "HA %02d:", int(value1temp));
+              sprintf(OLED_Line_BEG, "Dec %02d:", int(value1temp));
               display.print(F(OLED_Line_BEG));
               // Change font colour to reverse
               sprintf(OLED_Line_MID, "%02d", int(value2temp));
@@ -1060,7 +1277,7 @@ void update_OLED()
               display.println(F(OLED_Line_END));
               break;
             case VALUE3:
-               sprintf(OLED_Line_BEG, "HA %02d:%02d:", int(value1temp), int(value2temp));
+               sprintf(OLED_Line_BEG, "Dec %02d:%02d:", int(value1temp), int(value2temp));
               display.print(F(OLED_Line_BEG));
               // Change font colour to reverse
               sprintf(OLED_Line_MID, "%02d", int(value3temp));
@@ -1161,9 +1378,6 @@ void update_OLED()
 
 } //End of update_OLED 
 
-
-
-
 // Debounce subroutine
 //
 boolean buttonDown(char button, unsigned long *marker, char *butnstate, unsigned long interval) {
@@ -1234,16 +1448,19 @@ void saveToEEPROM() {
   // Arduino integers comprise 4 8-bit bytes
   // Byte addresses increment by 4 for each integer variable stored
   //
-  eeWriteInt(0,latHem);
-  eeWriteInt(4,latHH);
-  eeWriteInt(8,latMM);
-  eeWriteInt(12,latSS);
-  eeWriteInt(16,starAR_HH);
-  eeWriteInt(20,starAR_MM);
-  eeWriteInt(24,starAR_SS);
-  eeWriteInt(28,starH_HH);
-  eeWriteInt(32,starH_MM);
-  eeWriteInt(36,starH_SS);
+  eeWriteInt(0,LST_HH);
+  eeWriteInt(4,LST_MM);
+  eeWriteInt(8,LST_SS);
+  eeWriteInt(12,latHem);
+  eeWriteInt(16,lat_HH);
+  eeWriteInt(20,lat_MM);
+  eeWriteInt(24,lat_SS);
+  eeWriteInt(28,starAR_HH);
+  eeWriteInt(32,starAR_MM);
+  eeWriteInt(36,starAR_SS);
+  eeWriteInt(40,starDec_DD);
+  eeWriteInt(44,starDec_MM);
+  eeWriteInt(48,starDec_SS);
   
 }
 
@@ -1258,20 +1475,24 @@ void getFromEEPROM() {
 
   // Special case for the enumerated hemisphere variable
   //
-  if (eeGetInt (0) == 0) latHem = NORTH;
+  if (eeGetInt (12) == 0) latHem = NORTH;
   else latHem = SOUTH;
 
   // And the rest
   //
-  latHH = eeGetInt(4);
-  latMM = eeGetInt(8);
-  latSS = eeGetInt(12);
-  starAR_HH = eeGetInt(16);
-  starAR_MM = eeGetInt(20);
-  starAR_SS = eeGetInt(24);
-  starH_HH = eeGetInt(28);
-  starH_MM = eeGetInt(32);
-  starH_SS = eeGetInt(36);
+  LST_HH      = checkZero(eeGetInt(0));
+  LST_MM      = checkZero(eeGetInt(4));
+  LST_SS      = checkZero(eeGetInt(8));
+  // Hemispheres is a special case above
+  lat_HH      = checkZero(eeGetInt(16));
+  lat_MM      = checkZero(eeGetInt(20));
+  lat_SS      = checkZero(eeGetInt(24));
+  starAR_HH   = checkZero(eeGetInt(28));
+  starAR_MM   = checkZero(eeGetInt(32));
+  starAR_SS   = checkZero(eeGetInt(36));
+  starDec_DD  = eeGetInt(40);
+  starDec_MM  = checkZero(eeGetInt(44));
+  starDec_SS  = checkZero(eeGetInt(48));
 }
 
 
@@ -1295,4 +1516,117 @@ int eeGetInt(int pos) {
   *(p + 2)  = dueFlashStorage.read(pos + 2);
   *(p + 3)  = dueFlashStorage.read(pos + 3);
   return val;
+}
+
+// Function to check the sign of an integer
+// If the value is less than zero, then make equal to zero
+//
+int checkZero(int check) {
+  int val;
+  if (check < 0) val = 0;
+  else val = check;
+  return val;
+}
+
+// Convert reference star equatorial coordinates to horizontal coordinates
+// This will be used as a starting reference for the telescope
+// by converting the horizontal coordinates into encoder pulse starting positions
+//
+void reference_coords() {
+
+  // Key:
+  //    α alpha is Right Ascension of the reference star
+  //    δ delta is Declination of the reference star
+  //    φ phi is local latitude of the observing position
+  //    H is hour angle of the reference star
+  //    a is the altitude of the reference star
+  //    A is the azimuth of the reference star
+  
+  // Local hour angle H
+  // H = LST - α
+  //
+  double LST_rad    = ((LST_HH * 3600 + LST_MM * 60 + LST_SS) / 3600) * pi / 12;
+  double alpha_rad  = ((starAR_HH * 3600 + starAR_MM * 60 + starAR_SS) / 3600) * pi / 12;
+  //if (refHrAngHrs < 0) refHrAngHrs += 24;  // Add 24 hours if the hour angle is less than 0
+  double H_rad = LST_rad - alpha_rad;
+  
+  // δ is the declination of the reference star in radians
+  //
+  double delta_rad = ((starDec_DD * 3600 + starDec_MM * 60 + starDec_SS) / 3600) * pi / 180;
+  
+  // Reference star altitude a
+  // a = asin(sin(δ) sin(φ) + cos(δ) cos(φ) cos(H))
+  //
+  double sin_delta_rad = sin(delta_rad);
+  // sin_phi_rad is calculated in startup()
+  double cos_delta_rad = cos(delta_rad);
+  // cos_phi_rad is calculated in startup()
+  double cos_H_rad = cos(H_rad);
+  double sin_a_rad = sin_delta_rad * sin_phi_rad + cos_delta_rad * cos_phi_rad * cos_H_rad;
+  double a_rad = asin(sin_a_rad);
+  
+  // Reference star azimuth A
+  // A = asin( - sin(H) cos(δ) / cos(a) )
+  //
+  double sin_H_rad = sin(H_rad);
+  // cos_delta_rad is calculated above
+  double cos_a_rad = cos(a_rad);
+  double sin_A_rad = -sin_H_rad * cos_delta_rad / cos_a_rad;
+  double A_rad = asin(sin_A_rad);
+  if (A_rad < 0) A_rad += (2 * pi); // Change range of reference Azimuth from (-180 to +180) to (0 to 360) degrees
+  
+  // Convert Altitude and Azimuth angles into the equivalent number of encoder pulses
+  //
+  refAltPulses = (a_rad * pulses_enc1) / (2 * pi);
+  refAzPulses = (A_rad * pulses_enc2) / (2 * pi);
+
+
+  char buffer[16];
+  Serial.print("LST_rad ");
+//  Serial.println(dtostrf(LST_rad,15,9,buffer));
+  Serial.println(LST_rad);
+  Serial.println("Local latitude not available ");
+  Serial.print("alpha_rad ");
+  Serial.println(alpha_rad);
+  Serial.print("delta_rad ");
+  Serial.println(delta_rad);
+  Serial.print("H_rad ");
+  Serial.println(H_rad);
+  Serial.print("sin_delta_rad ");
+  Serial.println(sin_delta_rad);
+  Serial.print("sin_phi_rad ");
+  Serial.println(sin_phi_rad);
+  Serial.print("cos_delta_rad ");
+  Serial.println(cos_delta_rad);
+  Serial.print("cos_phi_rad ");
+  Serial.println(cos_phi_rad);
+  Serial.print("cos_H_rad ");
+  Serial.println(cos_H_rad);
+  Serial.print("sin_a_rad ");
+  Serial.println(sin_a_rad);
+  Serial.print("a_rad ");
+  Serial.println(a_rad);
+  Serial.print("sin_H_rad ");
+  Serial.println(sin_H_rad);
+  Serial.print("cos_a_rad ");
+  Serial.println(cos_a_rad);
+  Serial.print("sin_A_rad ");
+  Serial.println(sin_A_rad);
+  Serial.print("A_rad ");
+  Serial.println(A_rad);
+  Serial.print("refAltPulses ");
+  Serial.println(refAltPulses);
+  Serial.print("refAzPulses ");
+  Serial.println(refAzPulses);
+
+  
+
+}
+
+// Convert decimal LST data to hours, minutes, seconds
+//
+void TSL_dec_to_HMS () {
+  LST_HH = TSL / 3600;
+  LST_MM = (TSL - LST_HH * 3600) / 60;
+  LST_SS = (TSL - LST_HH * 3600) - LST_MM * 60;
 }
