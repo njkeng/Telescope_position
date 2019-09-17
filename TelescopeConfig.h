@@ -36,9 +36,15 @@ enum hemispheres {
 // enter your latitude (example: NORTH 40º33'20'')
 //
 enum hemispheres latHem = SOUTH;  // Valid values are NORTH or SOUTH
-int latHH = 27;
-int latMM = 28;
-int latSS = 5;
+int lat_HH = 27;
+int lat_MM = 28;
+int lat_SS = 5;
+
+// enter apparent (local) sidereal time (LST: HH:MM:SS)
+//
+int LST_HH = 11;
+int LST_MM = 55;
+int LST_SS = 38;
 
 // enter reference star right ascension (AR: HH:MM:SS)
 // for Northern hemisphere, the reference star would normally be the Pole Star (Polaris)
@@ -53,12 +59,6 @@ int starAR_SS = 59;
 int starDec_DD = 8;
 int starDec_MM = 7;
 int starDec_SS = 59;
-
-// enter apparent (local) sidereal time (LST: HH:MM:SS)
-//
-int LST_HH = 11;
-int LST_MM = 55;
-int LST_SS = 38;
 
 // For DEBUGGING use only
 // SETTING THIS FLAG WILL MAKE THE COORDINATES CALCULATE INCORRECTLY
