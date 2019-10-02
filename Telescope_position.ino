@@ -61,7 +61,7 @@ unsigned long t_ciclo_acumulado = 0, t_ciclo;
 long    Az_tel_s, Alt_tel_s;
 long    AR_tel_s, DEC_tel_s;
 long    AR_stell_s, DEC_stell_s;
-double  cos_phi_rad, sin_phi_rad;
+double  phi_rad,cos_phi_rad, sin_phi_rad;
 int     hemCorrectLat;
 
 // Declarations for menu displays
@@ -171,8 +171,9 @@ void setup()
   //
   if (latHem == NORTH) hemCorrectLat = lat_HH;
   else hemCorrectLat = -lat_HH;
-  cos_phi_rad = cos((((hemCorrectLat * 3600) + (lat_MM * 60) + lat_SS) / 3600.0) * pi / 180.0);
-  sin_phi_rad = sin((((hemCorrectLat * 3600) + (lat_MM * 60) + lat_SS) / 3600.0) * pi / 180.0);
+  phi_rad = (((hemCorrectLat * 3600) + (lat_MM * 60) + lat_SS) / 3600.0) * pi / 180.0;
+  cos_phi_rad = cos(phi_rad);
+  sin_phi_rad = sin(phi_rad);
 
   // Calculate local sidereal time from stored values
   //
@@ -229,7 +230,7 @@ void loop()
   // Stellarium communication
   //
   if (Serial.available() > 0) {
-//    communication();
+    communication();
   }
 
   // Menu system
@@ -395,12 +396,12 @@ void AZ_to_EQ()
   }
 
   // Convert decimal equatorial coordinate data to hours, minutes, seconds
-  arHH = AR_tel_s / 3600;
-  arMM = (AR_tel_s - arHH * 3600) / 60;
-  arSS = (AR_tel_s - arHH * 3600) - arMM * 60;
-  decDEG = abs(DEC_tel_s) / 3600;
-  decMM = (abs(DEC_tel_s) - decDEG * 3600) / 60;
-  decSS = (abs(DEC_tel_s) - decDEG * 3600) - decMM * 60;
+  arHH = AR_tel_s / 3600L;
+  arMM = (AR_tel_s - arHH * 3600L) / 60L;
+  arSS = (AR_tel_s - arHH * 3600L) - arMM * 60L;
+  decDEG = abs(DEC_tel_s) / 3600L;
+  decMM = (abs(DEC_tel_s) - decDEG * 3600L) / 60L;
+  decSS = (abs(DEC_tel_s) - decDEG * 3600L) - decMM * 60L;
   (DEC_tel_s < 0) ? sDEC_tel = 45 : sDEC_tel = 43;
 
   // Equatorial coordinate data for Stellarium comms
@@ -1545,14 +1546,16 @@ void reference_coords() {
   // Local hour angle H
   // H = LST - α
   //
-  double LST_rad    = ((LST_HH * 3600 + LST_MM * 60 + LST_SS) / 3600) * pi / 12;
-  double alpha_rad  = ((starAR_HH * 3600 + starAR_MM * 60 + starAR_SS) / 3600) * pi / 12;
+//    phi_rad = (((hemCorrectLat * 3600) + (lat_MM * 60) + lat_SS) / 3600.0) * pi / 180.0;
+
+  double LST_rad    = (((LST_HH * 3600) + (LST_MM * 60) + LST_SS) / 3600.0) * pi / 12.0;
+  double alpha_rad  = (((starAR_HH * 3600) + (starAR_MM * 60) + starAR_SS) / 3600.0) * pi / 12.0;
   //if (refHrAngHrs < 0) refHrAngHrs += 24;  // Add 24 hours if the hour angle is less than 0
   double H_rad = LST_rad - alpha_rad;
   
   // δ is the declination of the reference star in radians
   //
-  double delta_rad = ((starDec_DD * 3600 + starDec_MM * 60 + starDec_SS) / 3600) * pi / 180;
+  double delta_rad = (((starDec_DD * 3600) + (starDec_MM * 60) + starDec_SS) / 3600.0) * pi / 180.0;
   
   // Reference star altitude a
   // a = asin(sin(δ) sin(φ) + cos(δ) cos(φ) cos(H))
@@ -1573,17 +1576,14 @@ void reference_coords() {
   double cos_a_rad = cos(a_rad);
   double sin_A_rad = -sin_H_rad * cos_delta_rad / cos_a_rad;
   double A_rad = asin(sin_A_rad);
-  if (A_rad < 0) A_rad += (2 * pi); // Change range of reference Azimuth from (-180 to +180) to (0 to 360) degrees
+  if (A_rad < 0) A_rad += (2.0 * pi); // Change range of reference Azimuth from (-180 to +180) to (0 to 360) degrees
   
   // Convert Altitude and Azimuth angles into the equivalent number of encoder pulses
   //
-  refAltPulses = (a_rad * pulses_enc1) / (2 * pi);
-  refAzPulses = (A_rad * pulses_enc2) / (2 * pi);
+  refAltPulses = (a_rad * pulses_enc1) / (2.0 * pi);
+  refAzPulses = (A_rad * pulses_enc2) / (2.0 * pi);
 
-
-  char buffer[16];
   Serial.print("LST_rad ");
-//  Serial.println(dtostrf(LST_rad,15,9,buffer));
   Serial.println(LST_rad);
   Serial.println("Local latitude not available ");
   Serial.print("alpha_rad ");
@@ -1605,7 +1605,7 @@ void reference_coords() {
   Serial.print("sin_a_rad ");
   Serial.println(sin_a_rad);
   Serial.print("a_rad ");
-  Serial.println(a_rad);
+  Serial.println((float)(a_rad),8);
   Serial.print("sin_H_rad ");
   Serial.println(sin_H_rad);
   Serial.print("cos_a_rad ");
@@ -1613,13 +1613,12 @@ void reference_coords() {
   Serial.print("sin_A_rad ");
   Serial.println(sin_A_rad);
   Serial.print("A_rad ");
-  Serial.println(A_rad);
+  Serial.println((float)(A_rad),8);
   Serial.print("refAltPulses ");
   Serial.println(refAltPulses);
   Serial.print("refAzPulses ");
   Serial.println(refAzPulses);
 
-  
 
 }
 

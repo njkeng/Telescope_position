@@ -9,8 +9,8 @@
 // OR
 // Calibrate by performing many revolutions (50?) and keep track of the count of encoder pulses
 //
-long pulses_enc1 = 46331;              
-long pulses_enc2 = 46277;       
+long pulses_enc1 = 46331;   // Altitude encoder
+long pulses_enc2 = 46277;   // Azimuth encoder
 
 
 // Define DUE's pins
