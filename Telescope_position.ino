@@ -32,14 +32,6 @@ DueFlashStorage dueFlashStorage;
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// Timer functions
-#include "TimerControl.h"
-extern void TimerInit(void);
-extern void TimerControl(void);
-extern void TimerStart(struct Timer* pTimer, int nCount);
-extern void TimerReset(struct Timer* pTimer);
-extern struct Timer pTimer[];
-
 // Declarations for astronomy
 //
 unsigned long     seg_sideral = 1003;
@@ -94,16 +86,16 @@ enum menuItems {
   TEL_HORIZONTAL,   // Current horizontal coordinates of our telescope
   TEL_EQUATORIAL,   // Current equatorial coordinates of our telescope
   TEL_LST,          // Local Sidereal Time at our observing position
+  REF_AZIMUTH,      // Azimuth of our reference star
+  REF_ALTITUDE,     // Altitude of our reference star
   TEL_LATITUDE,     // Latitude of our observing position
-  STAR_RA,          // Right ascension of our reference star
-  STAR_DEC,         // Declination of our reference star
   SAVE_EEPROM,      // Save latitude, LST, star RA and star DEC to EEPROM memory
   SHOW_ENCODERS     // For debugging use, show encoder count values. THIS WILL MAKE THE COORDINATES CALCULATE INCORRECTLY
 };
 enum menuItems menuItem;
 
 enum menuModes {
-  SHOW,          // Menu is in display mode
+  SHOW,             // Menu is in display mode
   EDIT              // Menu is in edit mode
 };
 enum menuModes menuMode;
@@ -149,6 +141,10 @@ int             encoderMin = 0;
 char menuButtonState = 0;           // state of button
 unsigned long menuButtonCount = 0;  // button debounce timer
 
+// For updating OLED display
+long previousMillis;
+long oledUpdateTime = 100;  // OLED update time in milliseconds
+
 
 //--------------------------------------------------------------------------------------------------------------------------------------------------------
 void setup()
@@ -186,13 +182,9 @@ void setup()
   encoderValue1 = (long) refAltPulses;  // Set the pulse count of encoder 1 to the reference star Altitude
   encoderValue2 = (long) refAzPulses;   // Set the pulse count of encoder 2 to the reference star Azimuth
 
-  // Initialize the timer control; also resets all timers
+  // Initialize OLED update timer
   //
-  TimerInit();
-  
-  // Start the timer
-  //
-  TimerStart(&pTimerLCD, LCD_FREQ);
+  previousMillis = millis();
 
   // Menu system encoder setup
   //
@@ -242,10 +234,9 @@ void loop()
     
   // Update OLED display
   //
-  if(pTimerLCD.bExpired == true)
-  {
+  if (abs(millis() - previousMillis) > oledUpdateTime) {
     update_OLED();
-    TimerStart(&pTimerLCD, LCD_FREQ);
+    previousMillis = millis();
   }
 
   // Record how long it took to run the main loop
@@ -479,13 +470,13 @@ void rotaryMenu() {
         TSL_dec_to_HMS();
         break;
       case 3:
-        menuItem = TEL_LATITUDE;
+        menuItem = REF_AZIMUTH;
         break;
       case 4:
-        menuItem = STAR_RA;
+        menuItem = REF_ALTITUDE;
         break;
       case 5:
-        menuItem = STAR_DEC;
+        menuItem = TEL_LATITUDE;
         break;
       case 6:
         menuItem = SAVE_EEPROM;
@@ -612,6 +603,186 @@ void rotaryMenu() {
         }
         break; // End of editing LST
 
+      case REF_AZIMUTH:    // There are three fields to edit plus a confirmation
+        switch (editingField) {
+          case HEMISPHERE:
+            editingField = VALUE1;  // Skip straight to the next field
+            break;
+            
+          case VALUE1:    // Reference star azimuth degrees
+            if (firstEdit == YES) {
+              encoderPos = refAZ_DD;
+              value1temp = refAZ_DD;
+              value2temp = refAZ_MM;
+              value3temp = refAZ_SS;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 360;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+            value1temp = encoderPos;
+            if (buttonPressed == YES) {  // Start editing value 2
+              editingField = VALUE2;
+              firstEdit = YES;
+            }
+            break; // End of editing value 1
+            
+          case VALUE2:    // Reference star azimuth minutes
+            if (firstEdit == YES) {
+              encoderPos = refAZ_MM;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 59;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+            value2temp = encoderPos;
+            if (buttonPressed == YES) {  // Start editing value 3
+              editingField = VALUE3;
+              firstEdit = YES;
+            }
+            break; // End of editing value 2
+            
+          case VALUE3:    // Reference star azimuth seconds
+            if (firstEdit == YES) {
+              encoderPos = refAZ_SS;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 59;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+            value3temp = encoderPos;
+            if (buttonPressed == YES) {  // Move on to confirmation
+              editingField = CONFIRMATION;
+              firstEdit = YES;
+            }
+            break; // End of editing value 3
+            
+          case CONFIRMATION:
+            if (firstEdit == YES) {
+              encoderPos = 0;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 1;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+            switch (encoderPos) {
+              case 0:
+                confirmation = NO;
+                break;
+              case 1:
+                confirmation = YES;
+                break;
+            }
+            if (buttonPressed == YES) {  // We are finished editing
+              if (confirmation == YES) {
+                // Copy the new values from temporary into live variables
+                refAZ_DD = value1temp;
+                refAZ_MM = value2temp;
+                refAZ_SS = value3temp;
+              }
+              menuMode = SHOW;
+              editingField = HEMISPHERE;
+              firstEdit = YES;
+              encoderPos = menuItem;
+            }
+            break; // End of confirmation
+        }
+        break; // End of editing reference star azimuth
+        
+      case REF_ALTITUDE:    // There are three fields to edit plus a confirmation
+        switch (editingField) {
+          case HEMISPHERE:      // Skip straight to the next field
+            editingField = VALUE1;
+            break;
+            
+          case VALUE1:    // Reference star altitude degrees
+            if (firstEdit == YES) {
+              encoderPos = refAlt_DD;
+              value1temp = refAlt_DD;
+              value2temp = refAlt_MM;
+              value3temp = refAlt_SS;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 90;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+            value1temp = encoderPos;
+            if (buttonPressed == YES) {  // Start editing value 2
+              editingField = VALUE2;
+              firstEdit = YES;
+            }
+            break; // End of editing value 1
+            
+          case VALUE2:    // Reference star altitude minutes
+            if (firstEdit == YES) {
+              encoderPos = refAlt_MM;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 59;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+            value2temp = encoderPos;
+            if (buttonPressed == YES) {  // Start editing value 3
+              editingField = VALUE3;
+              firstEdit = YES;
+            }
+            break; // End of editing value 2
+            
+          case VALUE3:    // Reference star altitude seconds
+            if (firstEdit == YES) {
+              encoderPos = refAlt_SS;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 59;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+            value3temp = encoderPos;
+            if (buttonPressed == YES) {  // Move on to confirmation
+              editingField = CONFIRMATION;
+              firstEdit = YES;
+            }
+            break; // End of editing value 3
+            
+          case CONFIRMATION:
+            if (firstEdit == YES) {
+              encoderPos = 0;
+              firstEdit = NO;
+            }
+            encoderMin = 0;
+            encoderMax = 1;
+            if (encoderPos < encoderMin) encoderPos = encoderMin;  
+            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
+            switch (encoderPos) {
+              case 0:
+                confirmation = NO;
+                break;
+              case 1:
+                confirmation = YES;
+                break;
+            }
+            if (buttonPressed == YES) {  // We are finished editing
+              if (confirmation == YES) {
+                // Copy the new values from temporary into live variables
+                refAlt_DD = value1temp;
+                refAlt_MM = value2temp;
+                refAlt_SS = value3temp;
+              }
+              menuMode = SHOW;
+              editingField = HEMISPHERE;
+              firstEdit = YES;
+              encoderPos = menuItem;
+            }
+            break; // End of confirmation
+      }
+      break; // End of editing reference star altitude 
+
       case TEL_LATITUDE:    // There are three fields to edit plus a confirmation
         switch (editingField) {
           case HEMISPHERE:    // Latitude hemisphere
@@ -729,186 +900,6 @@ void rotaryMenu() {
         }
         break; // End of editing latitude
 
-      case STAR_RA:    // There are three fields to edit plus a confirmation
-        switch (editingField) {
-          case HEMISPHERE:
-            editingField = VALUE1;  // Skip straight to the next field
-            break;
-            
-          case VALUE1:    // Right ascension hours
-            if (firstEdit == YES) {
-              encoderPos = starAR_HH;
-              value1temp = starAR_HH;
-              value2temp = starAR_MM;
-              value3temp = starAR_SS;
-              firstEdit = NO;
-            }
-            encoderMin = 0;
-            encoderMax = 23;
-            if (encoderPos < encoderMin) encoderPos = encoderMin;  
-            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
-            value1temp = encoderPos;
-            if (buttonPressed == YES) {  // Start editing value 2
-              editingField = VALUE2;
-              firstEdit = YES;
-            }
-            break; // End of editing value 1
-            
-          case VALUE2:    // Right ascension minutes
-            if (firstEdit == YES) {
-              encoderPos = starAR_MM;
-              firstEdit = NO;
-            }
-            encoderMin = 0;
-            encoderMax = 59;
-            if (encoderPos < encoderMin) encoderPos = encoderMin;  
-            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
-            value2temp = encoderPos;
-            if (buttonPressed == YES) {  // Start editing value 3
-              editingField = VALUE3;
-              firstEdit = YES;
-            }
-            break; // End of editing value 2
-            
-          case VALUE3:    // Right ascension seconds
-            if (firstEdit == YES) {
-              encoderPos = starAR_SS;
-              firstEdit = NO;
-            }
-            encoderMin = 0;
-            encoderMax = 59;
-            if (encoderPos < encoderMin) encoderPos = encoderMin;  
-            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
-            value3temp = encoderPos;
-            if (buttonPressed == YES) {  // Move on to confirmation
-              editingField = CONFIRMATION;
-              firstEdit = YES;
-            }
-            break; // End of editing value 3
-            
-          case CONFIRMATION:
-            if (firstEdit == YES) {
-              encoderPos = 0;
-              firstEdit = NO;
-            }
-            encoderMin = 0;
-            encoderMax = 1;
-            if (encoderPos < encoderMin) encoderPos = encoderMin;  
-            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
-            switch (encoderPos) {
-              case 0:
-                confirmation = NO;
-                break;
-              case 1:
-                confirmation = YES;
-                break;
-            }
-            if (buttonPressed == YES) {  // We are finished editing
-              if (confirmation == YES) {
-                // Copy the new values from temporary into live variables
-                starAR_HH = value1temp;
-                starAR_MM = value2temp;
-                starAR_SS = value3temp;
-              }
-              menuMode = SHOW;
-              editingField = HEMISPHERE;
-              firstEdit = YES;
-              encoderPos = menuItem;
-            }
-            break; // End of confirmation
-        }
-        break; // End of editing star right ascension
-        
-      case STAR_DEC:    // There are three fields to edit plus a confirmation
-        switch (editingField) {
-          case HEMISPHERE:    // Right ascension hours
-            editingField = VALUE1;
-            break;
-            
-          case VALUE1:    // Right ascension hours
-            if (firstEdit == YES) {
-              encoderPos = starDec_DD;
-              value1temp = starDec_DD;
-              value2temp = starDec_MM;
-              value3temp = starDec_SS;
-              firstEdit = NO;
-            }
-            encoderMin = -179;
-            encoderMax = 179;
-            if (encoderPos < encoderMin) encoderPos = encoderMin;  
-            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
-            value1temp = encoderPos;
-            if (buttonPressed == YES) {  // Start editing value 2
-              editingField = VALUE2;
-              firstEdit = YES;
-            }
-            break; // End of editing value 1
-            
-          case VALUE2:    // Right ascension minutes
-            if (firstEdit == YES) {
-              encoderPos = starDec_MM;
-              firstEdit = NO;
-            }
-            encoderMin = 0;
-            encoderMax = 59;
-            if (encoderPos < encoderMin) encoderPos = encoderMin;  
-            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
-            value2temp = encoderPos;
-            if (buttonPressed == YES) {  // Start editing value 3
-              editingField = VALUE3;
-              firstEdit = YES;
-            }
-            break; // End of editing value 2
-            
-          case VALUE3:    // Right ascension seconds
-            if (firstEdit == YES) {
-              encoderPos = starDec_SS;
-              firstEdit = NO;
-            }
-            encoderMin = 0;
-            encoderMax = 59;
-            if (encoderPos < encoderMin) encoderPos = encoderMin;  
-            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
-            value3temp = encoderPos;
-            if (buttonPressed == YES) {  // Move on to confirmation
-              editingField = CONFIRMATION;
-              firstEdit = YES;
-            }
-            break; // End of editing value 3
-            
-          case CONFIRMATION:
-            if (firstEdit == YES) {
-              encoderPos = 0;
-              firstEdit = NO;
-            }
-            encoderMin = 0;
-            encoderMax = 1;
-            if (encoderPos < encoderMin) encoderPos = encoderMin;  
-            if (encoderPos > encoderMax) encoderPos = encoderMax;  // Ensure encoder position does not exceed the maximum
-            switch (encoderPos) {
-              case 0:
-                confirmation = NO;
-                break;
-              case 1:
-                confirmation = YES;
-                break;
-            }
-            if (buttonPressed == YES) {  // We are finished editing
-              if (confirmation == YES) {
-                // Copy the new values from temporary into live variables
-                starDec_DD = value1temp;
-                starDec_MM = value2temp;
-                starDec_SS = value3temp;
-              }
-              menuMode = SHOW;
-              editingField = HEMISPHERE;
-              firstEdit = YES;
-              encoderPos = menuItem;
-            }
-            break; // End of confirmation
-      }
-      break; // End of editing star right ascension 
-
     case SAVE_EEPROM:    // Only a yes or no confirmation here
 
       if (use_saved_data) {
@@ -981,7 +972,7 @@ void update_OLED()
   display.setTextColor(WHITE);      // Draw white text
   display.setCursor(0,0);          // Start at top-left corner
   display.cp437(true);              // Use full 256 char 'Code Page 437' font
-
+      
   switch (menuItem) {
     case TEL_HORIZONTAL:
       display.println("Horizontal coord");    // Print title
@@ -1049,6 +1040,8 @@ void update_OLED()
               display.setTextColor(WHITE);      // Draw white text
               break;
           case CONFIRMATION:
+            sprintf(OLED_Line_BEG, "LST %02d:%02d:%02d", int(value1temp), int(value2temp), int(value3temp));
+            display.println(F(OLED_Line_BEG));
             switch(confirmation) {
               case NO:
                 display.print("Save? ");
@@ -1076,6 +1069,161 @@ void update_OLED()
       } // End menuMode switch
       break;  // End of display LST
 
+    case REF_AZIMUTH:
+      display.println("Ref star azimuth");    // Print title
+      display.println("");                    // Print blank line
+
+      switch (menuMode) {
+        case SHOW:
+          sprintf(OLED_Line_BEG, "Az %02d:%02d:%02d", int(refAZ_DD), int(refAZ_MM), int(refAZ_SS));
+          display.println(F(OLED_Line_BEG));
+          break;
+        case EDIT:
+          switch (editingField) {
+            case HEMISPHERE:
+              break;
+            case VALUE1:
+              sprintf(OLED_Line_BEG, "Az ");
+              display.print(F(OLED_Line_BEG));
+              // Change font colour to reverse
+              sprintf(OLED_Line_MID, "%02d", int(value1temp));
+              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+              display.print(F(OLED_Line_MID));
+              // Change font colour back to normal
+              sprintf(OLED_Line_END, ":%02d:%02d", int(value2temp), int(value3temp));
+              display.setTextColor(WHITE);      // Draw white text
+              display.println(F(OLED_Line_END));
+              break;
+            case VALUE2:
+              sprintf(OLED_Line_BEG, "RA %02d:", int(value1temp));
+              display.print(F(OLED_Line_BEG));
+              // Change font colour to reverse
+              sprintf(OLED_Line_MID, "%02d", int(value2temp));
+              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+              display.print(F(OLED_Line_MID));
+              // Change font colour back to normal
+              sprintf(OLED_Line_END, ":%02d", int(value3temp));
+              display.setTextColor(WHITE);      // Draw white text
+              display.println(F(OLED_Line_END));
+              break;
+            case VALUE3:
+               sprintf(OLED_Line_BEG, "RA %02d:%02d:", int(value1temp), int(value2temp));
+              display.print(F(OLED_Line_BEG));
+              // Change font colour to reverse
+              sprintf(OLED_Line_MID, "%02d", int(value3temp));
+              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+              display.println(F(OLED_Line_MID));
+              // Change font colour back to normal
+              display.setTextColor(WHITE);      // Draw white text
+              break;
+           case CONFIRMATION:
+              sprintf(OLED_Line_BEG, "Az %02d:%02d:%02d", int(value1temp), int(value2temp), int(value3temp));
+              display.println(F(OLED_Line_BEG));
+              switch(confirmation) {
+                case NO:
+                  display.print("Save? ");
+                  // Change font colour to reverse
+                  display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+                  display.print("NO");
+                  // Change font colour back to normal
+                  display.setTextColor(WHITE);      // Draw white text
+                  display.println(" YES");
+                  break;
+                case YES:
+                  display.print("Save? NO ");
+                  // Change font colour to reverse
+                  display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+                  display.println("YES");
+                  // Change font colour back to normal
+                  display.setTextColor(WHITE);      // Draw white text
+                  break;
+          }  // End confirmation switch
+
+          break;
+        } // End editingField switch
+
+        break;
+      } // End menuMode switch
+      break;    // End of display reference star azimuth
+
+    case REF_ALTITUDE:
+      display.println("Ref star altitude");     // Print title
+      display.println("");                    // Print blank line
+
+      switch (menuMode) {
+        case SHOW:
+          sprintf(OLED_Line_BEG, "Alt %02d:%02d:%02d", int(refAlt_DD), int(refAlt_MM), int(refAlt_SS));
+          display.println(F(OLED_Line_BEG));
+          break;
+        case EDIT:
+          switch (editingField) {
+            case HEMISPHERE:
+              break;
+            case VALUE1:
+              sprintf(OLED_Line_BEG, "Alt ");
+              display.print(F(OLED_Line_BEG));
+              // Change font colour to reverse
+              sprintf(OLED_Line_MID, "%02d", int(value1temp));
+              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+              display.print(F(OLED_Line_MID));
+              // Change font colour back to normal
+              sprintf(OLED_Line_END, ":%02d:%02d", int(value2temp), int(value3temp));
+              display.setTextColor(WHITE);      // Draw white text
+              display.println(F(OLED_Line_END));
+              break;
+            case VALUE2:
+              sprintf(OLED_Line_BEG, "Alt %02d:", int(value1temp));
+              display.print(F(OLED_Line_BEG));
+              // Change font colour to reverse
+              sprintf(OLED_Line_MID, "%02d", int(value2temp));
+              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+              display.print(F(OLED_Line_MID));
+              // Change font colour back to normal
+              sprintf(OLED_Line_END, ":%02d", int(value3temp));
+              display.setTextColor(WHITE);      // Draw white text
+              display.println(F(OLED_Line_END));
+              break;
+            case VALUE3:
+              sprintf(OLED_Line_BEG, "Alt %02d:%02d:", int(value1temp), int(value2temp));
+              display.print(F(OLED_Line_BEG));
+              // Change font colour to reverse
+              sprintf(OLED_Line_MID, "%02d", int(value3temp));
+              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+              display.println(F(OLED_Line_MID));
+              // Change font colour back to normal
+              display.setTextColor(WHITE);      // Draw white text
+              break;
+           case CONFIRMATION:
+              sprintf(OLED_Line_BEG, "Alt %02d:%02d:%02d", int(value1temp), int(value2temp), int(value3temp));
+              display.println(F(OLED_Line_BEG));
+              switch(confirmation) {
+                case NO:
+                  display.print("Save? ");
+                  // Change font colour to reverse
+                  display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+                  display.print("NO");
+                  // Change font colour back to normal
+                  display.setTextColor(WHITE);      // Draw white text
+                  display.println(" YES");
+                  break;
+                case YES:
+                  display.print("Save? NO ");
+                  // Change font colour to reverse
+                  display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
+                  display.println("YES");
+                  // Change font colour back to normal
+                  display.setTextColor(WHITE);      // Draw white text
+                  break;
+              }  // End confirmation switch
+
+              break;
+          } // End editingField switch
+
+          break;
+      } // End menuMode switch
+
+      break;  // End of display reference star altitude
+      
     case TEL_LATITUDE:
       display.println("Latitude");            // Print title
       display.println("");                    // Print blank line
@@ -1137,7 +1285,10 @@ void update_OLED()
               // Change font colour back to normal
               display.setTextColor(WHITE);      // Draw white text
               break;
+
           case CONFIRMATION:
+            sprintf(OLED_Line_BEG, "Lat %c%02d:%02d:%02d", h, int(value1temp), int(value2temp), int(value3temp));
+            display.println(F(OLED_Line_BEG));
             switch(confirmation) {
               case NO:
                 display.print("Save? ");
@@ -1165,157 +1316,6 @@ void update_OLED()
       } // End menuMode switch
       break;  // End of display latitude
 
-    case STAR_RA:
-      display.println("Star R Ascension");    // Print title
-      display.println("");                    // Print blank line
-
-      switch (menuMode) {
-        case SHOW:
-          sprintf(OLED_Line_BEG, "RA %02d:%02d:%02d", int(starAR_HH), int(starAR_MM), int(starAR_SS));
-          display.println(F(OLED_Line_BEG));
-          break;
-        case EDIT:
-          switch (editingField) {
-            case HEMISPHERE:
-              break;
-            case VALUE1:
-              sprintf(OLED_Line_BEG, "RA ");
-              display.print(F(OLED_Line_BEG));
-              // Change font colour to reverse
-              sprintf(OLED_Line_MID, "%02d", int(value1temp));
-              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
-              display.print(F(OLED_Line_MID));
-              // Change font colour back to normal
-              sprintf(OLED_Line_END, ":%02d:%02d", int(value2temp), int(value3temp));
-              display.setTextColor(WHITE);      // Draw white text
-              display.println(F(OLED_Line_END));
-              break;
-            case VALUE2:
-              sprintf(OLED_Line_BEG, "RA %02d:", int(value1temp));
-              display.print(F(OLED_Line_BEG));
-              // Change font colour to reverse
-              sprintf(OLED_Line_MID, "%02d", int(value2temp));
-              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
-              display.print(F(OLED_Line_MID));
-              // Change font colour back to normal
-              sprintf(OLED_Line_END, ":%02d", int(value3temp));
-              display.setTextColor(WHITE);      // Draw white text
-              display.println(F(OLED_Line_END));
-              break;
-            case VALUE3:
-               sprintf(OLED_Line_BEG, "RA %02d:%02d:", int(value1temp), int(value2temp));
-              display.print(F(OLED_Line_BEG));
-              // Change font colour to reverse
-              sprintf(OLED_Line_MID, "%02d", int(value3temp));
-              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
-              display.println(F(OLED_Line_MID));
-              // Change font colour back to normal
-              display.setTextColor(WHITE);      // Draw white text
-              break;
-           case CONFIRMATION:
-              switch(confirmation) {
-                case NO:
-                  display.print("Save? ");
-                  // Change font colour to reverse
-                  display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
-                  display.print("NO");
-                  // Change font colour back to normal
-                  display.setTextColor(WHITE);      // Draw white text
-                  display.println(" YES");
-                  break;
-                case YES:
-                  display.print("Save? NO ");
-                  // Change font colour to reverse
-                  display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
-                  display.println("YES");
-                  // Change font colour back to normal
-                  display.setTextColor(WHITE);      // Draw white text
-                  break;
-          }  // End confirmation switch
-
-          break;
-        } // End editingField switch
-
-        break;
-      } // End menuMode switch
-      break;  // End of display Right Ascension
-
-    case STAR_DEC:
-      display.println("Star Declination");     // Print title
-      display.println("");                    // Print blank line
-
-      switch (menuMode) {
-        case SHOW:
-          sprintf(OLED_Line_BEG, "Dec %02d:%02d:%02d", int(starDec_DD), int(starDec_MM), int(starDec_SS));
-          display.println(F(OLED_Line_BEG));
-          break;
-        case EDIT:
-          switch (editingField) {
-            case HEMISPHERE:
-              break;
-            case VALUE1:
-              sprintf(OLED_Line_BEG, "Dec ");
-              display.print(F(OLED_Line_BEG));
-              // Change font colour to reverse
-              sprintf(OLED_Line_MID, "%02d", int(value1temp));
-              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
-              display.print(F(OLED_Line_MID));
-              // Change font colour back to normal
-              sprintf(OLED_Line_END, ":%02d:%02d", int(value2temp), int(value3temp));
-              display.setTextColor(WHITE);      // Draw white text
-              display.println(F(OLED_Line_END));
-              break;
-            case VALUE2:
-              sprintf(OLED_Line_BEG, "Dec %02d:", int(value1temp));
-              display.print(F(OLED_Line_BEG));
-              // Change font colour to reverse
-              sprintf(OLED_Line_MID, "%02d", int(value2temp));
-              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
-              display.print(F(OLED_Line_MID));
-              // Change font colour back to normal
-              sprintf(OLED_Line_END, ":%02d", int(value3temp));
-              display.setTextColor(WHITE);      // Draw white text
-              display.println(F(OLED_Line_END));
-              break;
-            case VALUE3:
-               sprintf(OLED_Line_BEG, "Dec %02d:%02d:", int(value1temp), int(value2temp));
-              display.print(F(OLED_Line_BEG));
-              // Change font colour to reverse
-              sprintf(OLED_Line_MID, "%02d", int(value3temp));
-              display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
-              display.println(F(OLED_Line_MID));
-              // Change font colour back to normal
-              display.setTextColor(WHITE);      // Draw white text
-              break;
-           case CONFIRMATION:
-              switch(confirmation) {
-                case NO:
-                  display.print("Save? ");
-                  // Change font colour to reverse
-                  display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
-                  display.print("NO");
-                  // Change font colour back to normal
-                  display.setTextColor(WHITE);      // Draw white text
-                  display.println(" YES");
-                  break;
-                case YES:
-                  display.print("Save? NO ");
-                  // Change font colour to reverse
-                  display.setTextColor(BLACK, WHITE); // Draw 'inverse' text
-                  display.println("YES");
-                  // Change font colour back to normal
-                  display.setTextColor(WHITE);      // Draw white text
-                  break;
-              }  // End confirmation switch
-
-              break;
-          } // End editingField switch
-
-          break;
-      } // End menuMode switch
-
-      break;
-      
     case SAVE_EEPROM:
       display.println("Save input data");     // Print title
       display.println("");                    // Print blank line
@@ -1456,12 +1456,12 @@ void saveToEEPROM() {
   eeWriteInt(16,lat_HH);
   eeWriteInt(20,lat_MM);
   eeWriteInt(24,lat_SS);
-  eeWriteInt(28,starAR_HH);
-  eeWriteInt(32,starAR_MM);
-  eeWriteInt(36,starAR_SS);
-  eeWriteInt(40,starDec_DD);
-  eeWriteInt(44,starDec_MM);
-  eeWriteInt(48,starDec_SS);
+  eeWriteInt(28,refAZ_DD);
+  eeWriteInt(32,refAZ_MM);
+  eeWriteInt(36,refAZ_SS);
+  eeWriteInt(40,refAlt_DD);
+  eeWriteInt(44,refAlt_MM);
+  eeWriteInt(48,refAlt_SS);
   
 }
 
@@ -1473,27 +1473,20 @@ void getFromEEPROM() {
   // Arduino integers comprise 4 8-bit bytes
   // Byte addresses increment by 4 for each integer variable stored
   //
-
-  // Special case for the enumerated hemisphere variable
-  //
-  if (eeGetInt (12) == 0) latHem = NORTH;
-  else latHem = SOUTH;
-
-  // And the rest
-  //
   LST_HH      = checkZero(eeGetInt(0));
   LST_MM      = checkZero(eeGetInt(4));
   LST_SS      = checkZero(eeGetInt(8));
-  // Hemispheres is a special case above
+  if (eeGetInt (12) == 0) latHem = NORTH;  // Special case for the enumerated hemisphere variable
+  else latHem = SOUTH;
   lat_HH      = checkZero(eeGetInt(16));
   lat_MM      = checkZero(eeGetInt(20));
   lat_SS      = checkZero(eeGetInt(24));
-  starAR_HH   = checkZero(eeGetInt(28));
-  starAR_MM   = checkZero(eeGetInt(32));
-  starAR_SS   = checkZero(eeGetInt(36));
-  starDec_DD  = eeGetInt(40);
-  starDec_MM  = checkZero(eeGetInt(44));
-  starDec_SS  = checkZero(eeGetInt(48));
+  refAZ_DD   = checkZero(eeGetInt(28));
+  refAZ_MM   = checkZero(eeGetInt(32));
+  refAZ_SS   = checkZero(eeGetInt(36));
+  refAlt_DD  = checkZero(eeGetInt(40));
+  refAlt_MM  = checkZero(eeGetInt(44));
+  refAlt_SS  = checkZero(eeGetInt(48));
 }
 
 
@@ -1529,96 +1522,21 @@ int checkZero(int check) {
   return val;
 }
 
-// Convert reference star equatorial coordinates to horizontal coordinates
+// Convert reference star horizontal coordinates to telescope position
 // This will be used as a starting reference for the telescope
 // by converting the horizontal coordinates into encoder pulse starting positions
 //
 void reference_coords() {
 
-  // Key:
-  //    α alpha is Right Ascension of the reference star
-  //    δ delta is Declination of the reference star
-  //    φ phi is local latitude of the observing position
-  //    H is hour angle of the reference star
-  //    a is the altitude of the reference star
-  //    A is the azimuth of the reference star
-  
-  // Local hour angle H
-  // H = LST - α
+  // Reference star altitude and azimuth
   //
-//    phi_rad = (((hemCorrectLat * 3600) + (lat_MM * 60) + lat_SS) / 3600.0) * pi / 180.0;
-
-  double LST_rad    = (((LST_HH * 3600) + (LST_MM * 60) + LST_SS) / 3600.0) * pi / 12.0;
-  double alpha_rad  = (((starAR_HH * 3600) + (starAR_MM * 60) + starAR_SS) / 3600.0) * pi / 12.0;
-  //if (refHrAngHrs < 0) refHrAngHrs += 24;  // Add 24 hours if the hour angle is less than 0
-  double H_rad = LST_rad - alpha_rad;
-  
-  // δ is the declination of the reference star in radians
-  //
-  double delta_rad = (((starDec_DD * 3600) + (starDec_MM * 60) + starDec_SS) / 3600.0) * pi / 180.0;
-  
-  // Reference star altitude a
-  // a = asin(sin(δ) sin(φ) + cos(δ) cos(φ) cos(H))
-  //
-  double sin_delta_rad = sin(delta_rad);
-  // sin_phi_rad is calculated in startup()
-  double cos_delta_rad = cos(delta_rad);
-  // cos_phi_rad is calculated in startup()
-  double cos_H_rad = cos(H_rad);
-  double sin_a_rad = sin_delta_rad * sin_phi_rad + cos_delta_rad * cos_phi_rad * cos_H_rad;
-  double a_rad = asin(sin_a_rad);
-  
-  // Reference star azimuth A
-  // A = asin( - sin(H) cos(δ) / cos(a) )
-  //
-  double sin_H_rad = sin(H_rad);
-  // cos_delta_rad is calculated above
-  double cos_a_rad = cos(a_rad);
-  double sin_A_rad = -sin_H_rad * cos_delta_rad / cos_a_rad;
-  double A_rad = asin(sin_A_rad);
-  if (A_rad < 0) A_rad += (2.0 * pi); // Change range of reference Azimuth from (-180 to +180) to (0 to 360) degrees
+  double a_rad = (((refAlt_DD * 3600) + (refAlt_MM * 60) + refAlt_SS) / 3600.0) * pi / 180.0; // Reference star altitude a
+  double A_rad = (((refAZ_DD * 3600) + (refAZ_MM * 60) + refAZ_SS) / 3600.0) * pi / 180.0;  // Reference star azimuth A
   
   // Convert Altitude and Azimuth angles into the equivalent number of encoder pulses
   //
   refAltPulses = (a_rad * pulses_enc1) / (2.0 * pi);
   refAzPulses = (A_rad * pulses_enc2) / (2.0 * pi);
-
-  Serial.print("LST_rad ");
-  Serial.println(LST_rad);
-  Serial.println("Local latitude not available ");
-  Serial.print("alpha_rad ");
-  Serial.println(alpha_rad);
-  Serial.print("delta_rad ");
-  Serial.println(delta_rad);
-  Serial.print("H_rad ");
-  Serial.println(H_rad);
-  Serial.print("sin_delta_rad ");
-  Serial.println(sin_delta_rad);
-  Serial.print("sin_phi_rad ");
-  Serial.println(sin_phi_rad);
-  Serial.print("cos_delta_rad ");
-  Serial.println(cos_delta_rad);
-  Serial.print("cos_phi_rad ");
-  Serial.println(cos_phi_rad);
-  Serial.print("cos_H_rad ");
-  Serial.println(cos_H_rad);
-  Serial.print("sin_a_rad ");
-  Serial.println(sin_a_rad);
-  Serial.print("a_rad ");
-  Serial.println((float)(a_rad),8);
-  Serial.print("sin_H_rad ");
-  Serial.println(sin_H_rad);
-  Serial.print("cos_a_rad ");
-  Serial.println(cos_a_rad);
-  Serial.print("sin_A_rad ");
-  Serial.println(sin_A_rad);
-  Serial.print("A_rad ");
-  Serial.println((float)(A_rad),8);
-  Serial.print("refAltPulses ");
-  Serial.println(refAltPulses);
-  Serial.print("refAzPulses ");
-  Serial.println(refAzPulses);
-
 
 }
 
